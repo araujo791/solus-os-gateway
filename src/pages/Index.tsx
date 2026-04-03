@@ -1,16 +1,131 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { Cpu, Thermometer, Zap, Gauge, CircuitBoard, BatteryCharging } from "lucide-react";
+import { GaugeChart } from "@/components/dashboard/GaugeChart";
+import { FanControl } from "@/components/dashboard/FanControl";
+import { StatusBar } from "@/components/dashboard/StatusBar";
+import { TempChart } from "@/components/dashboard/TempChart";
+import { PowerProfile } from "@/components/dashboard/PowerProfile";
+import { SensorCard } from "@/components/dashboard/SensorCard";
+import { useSimulatedSensors } from "@/hooks/useSimulatedSensors";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+export default function Index() {
+  const sensors = useSimulatedSensors();
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="min-h-screen bg-background p-4 lg:p-6">
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="absolute -inset-1 rounded-lg bg-primary/20 blur-md" />
+            <CircuitBoard className="relative h-8 w-8 text-primary" />
+          </div>
+          <div>
+            <h1 className="font-display text-xl font-bold uppercase tracking-wider text-foreground">
+              Mach<span className="text-primary text-glow-primary">Ctrl</span>
+            </h1>
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Machinist E5 D8 Max • Hardware Monitor
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
+          <span className="font-mono text-xs text-muted-foreground">Live</span>
+        </div>
+      </div>
+
+      {/* Status Bar */}
+      <StatusBar cpuUsage={sensors.cpuUsage} memUsage={sensors.memUsage} uptime="15h 22m" />
+
+      {/* Main Grid */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        {/* Left Column - Gauges & Sensors */}
+        <div className="space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-4 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Temperatures
+            </h3>
+            <div className="flex justify-around">
+              <GaugeChart value={sensors.cpuTemp} max={100} label="CPU" unit="°C" color="primary" />
+              <GaugeChart value={sensors.gpuTemp} max={100} label="GPU" unit="°C" color="accent" />
+              <GaugeChart value={sensors.boardTemp} max={80} label="Board" unit="°C" color="warning" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <SensorCard icon={Cpu} label="Frequency" value={sensors.cpuFreq.toFixed(1)} unit="GHz" color="primary" />
+            <SensorCard icon={Zap} label="Voltage" value={sensors.cpuVoltage.toFixed(2)} unit="V" color="accent" />
+            <SensorCard icon={BatteryCharging} label="Power" value={sensors.cpuPower} unit="W" color="warning" />
+            <SensorCard icon={Gauge} label="Load" value={sensors.cpuUsage} unit="%" color={sensors.cpuUsage > 80 ? "destructive" : "primary"} />
+          </div>
+        </div>
+
+        {/* Center Column - Chart & Power */}
+        <div className="space-y-4">
+          <TempChart data={sensors.tempHistory} />
+          <PowerProfile active={sensors.profile} onChange={sensors.setProfile} />
+        </div>
+
+        {/* Right Column - Fan Controls */}
+        <div className="space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Fan Control
+            </h3>
+            <div className="space-y-3">
+              <FanControl
+                name="CPU Fan"
+                rpm={sensors.fan1Rpm}
+                maxRpm={3500}
+                speed={sensors.fan1Speed}
+                onSpeedChange={sensors.setFan1Speed}
+              />
+              <FanControl
+                name="Chassis 1"
+                rpm={sensors.fan2Rpm}
+                maxRpm={3000}
+                speed={sensors.fan2Speed}
+                onSpeedChange={sensors.setFan2Speed}
+              />
+              <FanControl
+                name="Chassis 2"
+                rpm={sensors.fan3Rpm}
+                maxRpm={4000}
+                speed={sensors.fan3Speed}
+                onSpeedChange={sensors.setFan3Speed}
+              />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              System
+            </h3>
+            <div className="space-y-2 font-mono text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Board</span>
+                <span className="text-foreground">Machinist E5 D8 Max</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">CPU</span>
+                <span className="text-foreground">Xeon E5-2680 v4</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Kernel</span>
+                <span className="text-foreground">6.18.13-330.current</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">OS</span>
+                <span className="text-foreground">Solus Linux</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Driver</span>
+                <span className="text-primary">lm_sensors</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
-};
-
-const Index = PlaceholderIndex;
-
-export default Index;
+}
