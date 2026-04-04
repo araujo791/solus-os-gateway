@@ -29,8 +29,11 @@ export default function Index() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
-          <span className="font-mono text-xs text-muted-foreground">Ao vivo</span>
+          <div className={`h-2 w-2 rounded-full ${sensors.connected ? 'bg-primary' : 'bg-warning'} animate-pulse-glow`} />
+          <span className="font-mono text-xs text-muted-foreground">
+            {sensors.connected ? "Conectado" : "Simulado"}
+          </span>
+        </div>
         </div>
       </div>
 
