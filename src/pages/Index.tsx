@@ -38,7 +38,7 @@ export default function Index() {
       </div>
 
       {/* Barra de Status */}
-      <StatusBar cpuUsage={sensors.cpuUsage} memUsage={sensors.memUsage} uptime="15h 22m" />
+      <StatusBar cpuUsage={sensors.cpuUsage} memUsage={sensors.memUsage} uptime={sensors.systemInfo.uptime} />
 
       {/* Grid Principal */}
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
