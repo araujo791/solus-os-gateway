@@ -107,23 +107,28 @@ export default function Index() {
             <div className="space-y-2 font-mono text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Placa</span>
-                <span className="text-foreground">Machinist E5 D8 Max</span>
+                <span className="text-foreground">{sensors.systemInfo.board}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">CPU</span>
-                <span className="text-foreground">Xeon E5-2680 v4</span>
+                <span className="text-foreground">{sensors.systemInfo.cpu}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Kernel</span>
-                <span className="text-foreground">6.18.13-330.current</span>
+                <span className="text-foreground">{sensors.systemInfo.kernel}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">SO</span>
-                <span className="text-foreground">Solus Linux</span>
+                <span className="text-foreground">{sensors.systemInfo.os}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Driver</span>
-                <span className="text-primary">lm_sensors</span>
+                <span className="text-muted-foreground">Sensores</span>
+                <span className="text-primary">
+                  {sensors.connected 
+                    ? `${sensors.detectedSensors.tempCount} temp • ${sensors.detectedSensors.fanCount} fan`
+                    : "lm_sensors"
+                  }
+                </span>
               </div>
             </div>
           </div>
