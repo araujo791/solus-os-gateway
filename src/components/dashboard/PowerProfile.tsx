@@ -1,10 +1,10 @@
 import { Zap, Leaf, Flame, Settings2 } from "lucide-react";
 
 const profiles = [
-  { id: "silent", label: "Silent", icon: Leaf, description: "Low noise, reduced performance" },
-  { id: "balanced", label: "Balanced", icon: Settings2, description: "Optimal balance" },
-  { id: "performance", label: "Performance", icon: Zap, description: "Maximum performance" },
-  { id: "turbo", label: "Turbo", icon: Flame, description: "Full power, all fans max" },
+  { id: "silent", label: "Silencioso", icon: Leaf, description: "Baixo ruído, desempenho reduzido" },
+  { id: "balanced", label: "Equilibrado", icon: Settings2, description: "Equilíbrio ideal" },
+  { id: "performance", label: "Desempenho", icon: Zap, description: "Máximo desempenho" },
+  { id: "turbo", label: "Turbo", icon: Flame, description: "Potência total, fans no máximo" },
 ];
 
 interface PowerProfileProps {
@@ -16,7 +16,7 @@ export function PowerProfile({ active, onChange }: PowerProfileProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Power Profile
+        Perfil de Energia
       </h3>
       <div className="grid grid-cols-2 gap-2">
         {profiles.map((profile) => {

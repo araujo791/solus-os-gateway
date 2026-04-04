@@ -15,14 +15,12 @@ export function FanControl({ name, rpm, maxRpm, speed, onSpeedChange }: FanContr
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-border bg-card p-4 transition-all hover:border-primary/30 hover:glow-primary">
-      {/* Subtle grid background */}
       <div className="absolute inset-0 opacity-5" style={{
         backgroundImage: "linear-gradient(hsl(160, 100%, 45%) 1px, transparent 1px), linear-gradient(90deg, hsl(160, 100%, 45%) 1px, transparent 1px)",
         backgroundSize: "20px 20px"
       }} />
       
       <div className="relative flex items-center gap-4">
-        {/* Animated fan icon */}
         <div className="relative">
           <div className="absolute inset-0 rounded-full bg-primary/10 animate-pulse-glow" />
           <Fan 

@@ -8,7 +8,7 @@ export function TempChart({ data }: TempChartProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Temperature History
+        Histórico de Temperaturas
       </h3>
       <ResponsiveContainer width="100%" height={180}>
         <AreaChart data={data}>
@@ -50,7 +50,7 @@ export function TempChart({ data }: TempChartProps) {
           />
           <Area type="monotone" dataKey="cpu" stroke="hsl(160, 100%, 45%)" fill="url(#cpuGrad)" strokeWidth={2} name="CPU" />
           <Area type="monotone" dataKey="gpu" stroke="hsl(200, 100%, 50%)" fill="url(#gpuGrad)" strokeWidth={2} name="GPU" />
-          <Area type="monotone" dataKey="board" stroke="hsl(35, 100%, 55%)" fill="url(#boardGrad)" strokeWidth={2} name="Board" />
+          <Area type="monotone" dataKey="board" stroke="hsl(35, 100%, 55%)" fill="url(#boardGrad)" strokeWidth={2} name="Placa" />
         </AreaChart>
       </ResponsiveContainer>
       <div className="mt-2 flex items-center justify-center gap-6">
@@ -64,7 +64,7 @@ export function TempChart({ data }: TempChartProps) {
         </div>
         <div className="flex items-center gap-1.5">
           <div className="h-2 w-2 rounded-full bg-warning" />
-          <span className="font-mono text-[10px] text-muted-foreground">Board</span>
+          <span className="font-mono text-[10px] text-muted-foreground">Placa</span>
         </div>
       </div>
     </div>
