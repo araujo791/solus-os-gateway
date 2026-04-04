@@ -34,7 +34,6 @@ export default function Index() {
             {sensors.connected ? "Conectado" : "Simulado"}
           </span>
         </div>
-        </div>
       </div>
 
       {/* Barra de Status */}
