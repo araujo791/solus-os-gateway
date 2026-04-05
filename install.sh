@@ -40,7 +40,19 @@ echo -e "${CYAN}Sensores detectados:${NC}"
 sensors || echo -e "${YELLOW}⚠️  Nenhum sensor encontrado. Verifique os módulos do kernel.${NC}"
 
 echo -e "${GREEN}[3/7]${NC} 🐍 Instalando dependências Python..."
-pip3 install --user websockets psutil 2>/dev/null || pip install websockets psutil
+# Tenta instalar pip primeiro se não existir
+if ! command -v pip3 &> /dev/null; then
+    echo "   Instalando pip3..."
+    eopkg install -y pip 2>/dev/null || python3 -m ensurepip --upgrade 2>/dev/null || true
+fi
+# Instala dependências Python
+python3 -m pip install --break-system-packages websockets psutil 2>/dev/null || \
+python3 -m pip install websockets psutil 2>/dev/null || \
+pip3 install websockets psutil 2>/dev/null || {
+    echo -e "${YELLOW}⚠️  Instalação via pip falhou. Tentando via eopkg...${NC}"
+    eopkg install -y python3-psutil 2>/dev/null || true
+    python3 -m pip install --user websockets 2>/dev/null || true
+}
 
 echo -e "${GREEN}[4/7]${NC} 📁 Instalando MachCtrl em ${INSTALL_DIR}..."
 mkdir -p "$INSTALL_DIR"
