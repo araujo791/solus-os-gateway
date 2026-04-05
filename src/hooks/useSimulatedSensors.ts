@@ -19,12 +19,28 @@ function generateTempHistory() {
   return data;
 }
 
+interface MemorySlot {
+  locator: string;
+  size_gb: number;
+  type: string;
+  speed_mhz: number;
+  configured_speed_mhz: number;
+  voltage: number;
+  manufacturer: string;
+  part_number: string;
+}
+
 interface SensorData {
   cpuTemp: number;
   gpuTemp: number;
   boardTemp: number;
   cpuUsage: number;
   memUsage: number;
+  memTotalGb: number;
+  memUsedGb: number;
+  memTotalSlots: number;
+  memOccupiedSlots: number;
+  memSlots: MemorySlot[];
   fan1Rpm: number;
   fan2Rpm: number;
   fan3Rpm: number;
