@@ -264,7 +264,7 @@ export function useSimulatedSensors() {
 
   return {
     cpuTemp, gpuTemp, boardTemp,
-    cpuUsage, memUsage,
+    cpuUsage, memUsage, memTotalGb, memUsedGb, memTotalSlots, memOccupiedSlots, memSlots,
     fan1Rpm, fan2Rpm, fan3Rpm,
     fan1Speed, setFan1Speed: (v: number) => { setFan1Speed(v); sendFanCommand("fan1", v); },
     fan2Speed, setFan2Speed: (v: number) => { setFan2Speed(v); sendFanCommand("fan2", v); },
