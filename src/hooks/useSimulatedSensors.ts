@@ -19,12 +19,28 @@ function generateTempHistory() {
   return data;
 }
 
+interface MemorySlot {
+  locator: string;
+  size_gb: number;
+  type: string;
+  speed_mhz: number;
+  configured_speed_mhz: number;
+  voltage: number;
+  manufacturer: string;
+  part_number: string;
+}
+
 interface SensorData {
   cpuTemp: number;
   gpuTemp: number;
   boardTemp: number;
   cpuUsage: number;
   memUsage: number;
+  memTotalGb: number;
+  memUsedGb: number;
+  memTotalSlots: number;
+  memOccupiedSlots: number;
+  memSlots: MemorySlot[];
   fan1Rpm: number;
   fan2Rpm: number;
   fan3Rpm: number;
@@ -69,6 +85,14 @@ export function useSimulatedSensors() {
   const [cpuVoltage, setCpuVoltage] = useState(1.25);
   const [cpuPower, setCpuPower] = useState(65);
   const [tempHistory, setTempHistory] = useState(generateTempHistory);
+  const [memTotalGb, setMemTotalGb] = useState(32);
+  const [memUsedGb, setMemUsedGb] = useState(13.1);
+  const [memTotalSlots, setMemTotalSlots] = useState(4);
+  const [memOccupiedSlots, setMemOccupiedSlots] = useState(2);
+  const [memSlots, setMemSlots] = useState<MemorySlot[]>([
+    { locator: "DIMM_A1", size_gb: 16, type: "DDR4", speed_mhz: 2400, configured_speed_mhz: 2133, voltage: 1.2, manufacturer: "Samsung", part_number: "M393A2K43CB2" },
+    { locator: "DIMM_B1", size_gb: 16, type: "DDR4", speed_mhz: 2400, configured_speed_mhz: 2133, voltage: 1.2, manufacturer: "Samsung", part_number: "M393A2K43CB2" },
+  ]);
   const [profile, setProfile] = useState("balanced");
   const [connected, setConnected] = useState(false);
   const [systemInfo, setSystemInfo] = useState({
@@ -119,6 +143,11 @@ export function useSimulatedSensors() {
               }
               if (data.memory) {
                 setMemUsage(Math.round(data.memory.usage || 0));
+                setMemTotalGb(data.memory.total_gb || 0);
+                setMemUsedGb(data.memory.used_gb || 0);
+                if (data.memory.total_slots !== undefined) setMemTotalSlots(data.memory.total_slots);
+                if (data.memory.occupied_slots !== undefined) setMemOccupiedSlots(data.memory.occupied_slots);
+                if (data.memory.slots) setMemSlots(data.memory.slots);
               }
 
               // Fans
@@ -235,7 +264,7 @@ export function useSimulatedSensors() {
 
   return {
     cpuTemp, gpuTemp, boardTemp,
-    cpuUsage, memUsage,
+    cpuUsage, memUsage, memTotalGb, memUsedGb, memTotalSlots, memOccupiedSlots, memSlots,
     fan1Rpm, fan2Rpm, fan3Rpm,
     fan1Speed, setFan1Speed: (v: number) => { setFan1Speed(v); sendFanCommand("fan1", v); },
     fan2Speed, setFan2Speed: (v: number) => { setFan2Speed(v); sendFanCommand("fan2", v); },

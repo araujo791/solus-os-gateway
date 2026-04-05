@@ -177,13 +177,63 @@ def get_cpu_info():
 
 
 def get_memory_info():
-    """Obtém uso de memória."""
+    """Obtém uso de memória e informações dos slots via dmidecode."""
     mem = psutil.virtual_memory()
-    return {
+    info = {
         "usage": round(mem.percent, 1),
         "total_gb": round(mem.total / (1024**3), 1),
         "used_gb": round(mem.used / (1024**3), 1),
+        "slots": [],
+        "total_slots": 0,
+        "occupied_slots": 0,
     }
+
+    try:
+        result = subprocess.run(
+            ["dmidecode", "-t", "memory"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            output = result.stdout
+            # Parse memory devices
+            devices = output.split("Memory Device")
+            for dev in devices[1:]:  # skip header
+                info["total_slots"] += 1
+                size_match = re.search(r"Size:\s+(\d+)\s*(MB|GB|TB)", dev)
+                if size_match:
+                    info["occupied_slots"] += 1
+                    size_val = int(size_match.group(1))
+                    size_unit = size_match.group(2)
+                    if size_unit == "MB":
+                        size_gb = round(size_val / 1024, 1)
+                    elif size_unit == "TB":
+                        size_gb = size_val * 1024
+                    else:
+                        size_gb = size_val
+
+                    speed_match = re.search(r"Speed:\s+(\d+)\s*MT/s", dev)
+                    conf_speed_match = re.search(r"Configured Memory Speed:\s+(\d+)\s*MT/s", dev)
+                    voltage_match = re.search(r"Configured Voltage:\s+([\d.]+)\s*V", dev)
+                    type_match = re.search(r"Type:\s+(\S+)", dev)
+                    locator_match = re.search(r"Locator:\s+(.+)", dev)
+                    manufacturer_match = re.search(r"Manufacturer:\s+(.+)", dev)
+                    part_match = re.search(r"Part Number:\s+(.+)", dev)
+
+                    slot = {
+                        "locator": locator_match.group(1).strip() if locator_match else "?",
+                        "size_gb": size_gb,
+                        "type": type_match.group(1).strip() if type_match else "?",
+                        "speed_mhz": int(speed_match.group(1)) if speed_match else 0,
+                        "configured_speed_mhz": int(conf_speed_match.group(1)) if conf_speed_match else 0,
+                        "voltage": float(voltage_match.group(1)) if voltage_match else 0,
+                        "manufacturer": manufacturer_match.group(1).strip() if manufacturer_match else "?",
+                        "part_number": part_match.group(1).strip() if part_match else "?",
+                    }
+                    info["slots"].append(slot)
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
+        pass
+
+    return info
 
 
 def get_system_info():
