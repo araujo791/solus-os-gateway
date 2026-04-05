@@ -1,10 +1,10 @@
 import { Cpu, Thermometer, Zap, Gauge, CircuitBoard, BatteryCharging } from "lucide-react";
 import { GaugeChart } from "@/components/dashboard/GaugeChart";
-import { FanControl } from "@/components/dashboard/FanControl";
 import { StatusBar } from "@/components/dashboard/StatusBar";
 import { TempChart } from "@/components/dashboard/TempChart";
 import { PowerProfile } from "@/components/dashboard/PowerProfile";
 import { SensorCard } from "@/components/dashboard/SensorCard";
+import { MemoryPanel } from "@/components/dashboard/MemoryPanel";
 import { useSimulatedSensors } from "@/hooks/useSimulatedSensors";
 
 export default function Index() {
