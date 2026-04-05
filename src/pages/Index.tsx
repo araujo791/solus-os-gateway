@@ -68,36 +68,16 @@ export default function Index() {
           <PowerProfile active={sensors.profile} onChange={sensors.setProfile} />
         </div>
 
-        {/* Coluna Direita - Controle de Fans */}
+        {/* Coluna Direita - Memória & Sistema */}
         <div className="space-y-4">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Controle de Ventilação
-            </h3>
-            <div className="space-y-3">
-              <FanControl
-                name="Fan CPU"
-                rpm={sensors.fan1Rpm}
-                maxRpm={3500}
-                speed={sensors.fan1Speed}
-                onSpeedChange={sensors.setFan1Speed}
-              />
-              <FanControl
-                name="Gabinete 1"
-                rpm={sensors.fan2Rpm}
-                maxRpm={3000}
-                speed={sensors.fan2Speed}
-                onSpeedChange={sensors.setFan2Speed}
-              />
-              <FanControl
-                name="Gabinete 2"
-                rpm={sensors.fan3Rpm}
-                maxRpm={4000}
-                speed={sensors.fan3Speed}
-                onSpeedChange={sensors.setFan3Speed}
-              />
-            </div>
-          </div>
+          <MemoryPanel
+            totalGb={sensors.memTotalGb}
+            usedGb={sensors.memUsedGb}
+            usage={sensors.memUsage}
+            totalSlots={sensors.memTotalSlots}
+            occupiedSlots={sensors.memOccupiedSlots}
+            slots={sensors.memSlots}
+          />
 
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
