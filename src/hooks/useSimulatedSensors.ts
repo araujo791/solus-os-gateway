@@ -85,6 +85,14 @@ export function useSimulatedSensors() {
   const [cpuVoltage, setCpuVoltage] = useState(1.25);
   const [cpuPower, setCpuPower] = useState(65);
   const [tempHistory, setTempHistory] = useState(generateTempHistory);
+  const [memTotalGb, setMemTotalGb] = useState(32);
+  const [memUsedGb, setMemUsedGb] = useState(13.1);
+  const [memTotalSlots, setMemTotalSlots] = useState(4);
+  const [memOccupiedSlots, setMemOccupiedSlots] = useState(2);
+  const [memSlots, setMemSlots] = useState<MemorySlot[]>([
+    { locator: "DIMM_A1", size_gb: 16, type: "DDR4", speed_mhz: 2400, configured_speed_mhz: 2133, voltage: 1.2, manufacturer: "Samsung", part_number: "M393A2K43CB2" },
+    { locator: "DIMM_B1", size_gb: 16, type: "DDR4", speed_mhz: 2400, configured_speed_mhz: 2133, voltage: 1.2, manufacturer: "Samsung", part_number: "M393A2K43CB2" },
+  ]);
   const [profile, setProfile] = useState("balanced");
   const [connected, setConnected] = useState(false);
   const [systemInfo, setSystemInfo] = useState({
