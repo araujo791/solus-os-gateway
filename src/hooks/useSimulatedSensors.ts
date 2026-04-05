@@ -143,6 +143,11 @@ export function useSimulatedSensors() {
               }
               if (data.memory) {
                 setMemUsage(Math.round(data.memory.usage || 0));
+                setMemTotalGb(data.memory.total_gb || 0);
+                setMemUsedGb(data.memory.used_gb || 0);
+                if (data.memory.total_slots !== undefined) setMemTotalSlots(data.memory.total_slots);
+                if (data.memory.occupied_slots !== undefined) setMemOccupiedSlots(data.memory.occupied_slots);
+                if (data.memory.slots) setMemSlots(data.memory.slots);
               }
 
               // Fans
