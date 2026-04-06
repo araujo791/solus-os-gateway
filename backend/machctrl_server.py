@@ -631,18 +631,49 @@ class SensorServer:
         
         elif action == "set_profile":
             profile_name = cmd.get("profile", "balanced")
-            # Perfis de energia aplicam governador de CPU
-            governors = {
-                "silent": "powersave",
-                "balanced": "ondemand",
-                "performance": "performance",
-                "turbo": "performance",
-            }
-            governor = governors.get(profile_name, "ondemand")
             success = True
+            applied_governor = ""
+            
             try:
-                # Aplica governador a todos os cores (como GtkStressTesting)
                 cpu_count = psutil.cpu_count(logical=True) or 1
+                
+                # Detecta governadores disponíveis (intel_pstate vs acpi-cpufreq)
+                available_governors = []
+                avail_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"
+                if os.path.exists(avail_path):
+                    with open(avail_path) as f:
+                        available_governors = f.read().strip().split()
+                
+                has_pstate = os.path.exists("/sys/devices/system/cpu/intel_pstate")
+                print(f"📊 Governadores disponíveis: {available_governors}, intel_pstate: {has_pstate}")
+                
+                # Mapeia perfil -> governador baseado no que está disponível
+                if has_pstate:
+                    # intel_pstate: só performance/powersave
+                    gov_map = {
+                        "silent": "powersave",
+                        "balanced": "powersave",
+                        "performance": "performance",
+                        "turbo": "performance",
+                    }
+                else:
+                    gov_map = {
+                        "silent": "powersave",
+                        "balanced": "schedutil" if "schedutil" in available_governors else
+                                    "ondemand" if "ondemand" in available_governors else "powersave",
+                        "performance": "performance",
+                        "turbo": "performance",
+                    }
+                
+                governor = gov_map.get(profile_name, "powersave")
+                if governor not in available_governors and available_governors:
+                    # Fallback para o mais próximo disponível
+                    governor = available_governors[0]
+                    print(f"⚠️  Governador desejado não disponível, usando: {governor}")
+                
+                applied_governor = governor
+                
+                # Aplica governador a todos os cores
                 for i in range(cpu_count):
                     gov_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_governor"
                     if os.path.exists(gov_path):
@@ -652,43 +683,58 @@ class SensorServer:
                         except PermissionError:
                             success = False
                 
-                # Perfil turbo: desabilita intel_pstate no_turbo
-                turbo_path = "/sys/devices/system/cpu/intel_pstate/no_turbo"
-                if os.path.exists(turbo_path):
-                    try:
-                        with open(turbo_path, "w") as f:
-                            f.write("0" if profile_name == "turbo" else "1" if profile_name == "silent" else "0")
-                    except PermissionError:
-                        pass
-                
-                # Perfil silent: limita frequência máxima
-                if profile_name == "silent":
-                    for i in range(psutil.cpu_count(logical=True) or 1):
-                        max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
-                        min_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_min_freq"
-                        max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
-                        if os.path.exists(max_path) and os.path.exists(max_info):
+                # intel_pstate: controla turbo e limites de frequência via max/min_perf_pct
+                if has_pstate:
+                    turbo_path = "/sys/devices/system/cpu/intel_pstate/no_turbo"
+                    min_perf = "/sys/devices/system/cpu/intel_pstate/min_perf_pct"
+                    max_perf = "/sys/devices/system/cpu/intel_pstate/max_perf_pct"
+                    
+                    perf_settings = {
+                        "silent":      {"no_turbo": "1", "min_perf": "15", "max_perf": "50"},
+                        "balanced":    {"no_turbo": "0", "min_perf": "20", "max_perf": "80"},
+                        "performance": {"no_turbo": "0", "min_perf": "30", "max_perf": "100"},
+                        "turbo":       {"no_turbo": "0", "min_perf": "50", "max_perf": "100"},
+                    }
+                    settings = perf_settings.get(profile_name, perf_settings["balanced"])
+                    
+                    for path, val in [(turbo_path, settings["no_turbo"]),
+                                       (min_perf, settings["min_perf"]),
+                                       (max_perf, settings["max_perf"])]:
+                        if os.path.exists(path):
                             try:
-                                with open(max_info) as f:
-                                    max_freq = int(f.read().strip())
-                                # Limita a 60% da frequência máxima
-                                with open(max_path, "w") as f:
-                                    f.write(str(int(max_freq * 0.6)))
-                            except (PermissionError, ValueError):
-                                pass
+                                with open(path, "w") as f:
+                                    f.write(val)
+                                print(f"   ✅ {path} = {val}")
+                            except PermissionError:
+                                print(f"   ❌ Sem permissão: {path}")
                 else:
-                    # Restaura frequência máxima
-                    for i in range(psutil.cpu_count(logical=True) or 1):
-                        max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
-                        max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
-                        if os.path.exists(max_path) and os.path.exists(max_info):
-                            try:
-                                with open(max_info) as f:
-                                    max_freq = f.read().strip()
-                                with open(max_path, "w") as f:
-                                    f.write(max_freq)
-                            except (PermissionError, ValueError):
-                                pass
+                    # acpi-cpufreq: controla via scaling_max_freq
+                    if profile_name == "silent":
+                        for i in range(cpu_count):
+                            max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
+                            max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
+                            if os.path.exists(max_path) and os.path.exists(max_info):
+                                try:
+                                    with open(max_info) as f:
+                                        max_freq = int(f.read().strip())
+                                    with open(max_path, "w") as f:
+                                        f.write(str(int(max_freq * 0.6)))
+                                except (PermissionError, ValueError):
+                                    pass
+                    else:
+                        for i in range(cpu_count):
+                            max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
+                            max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
+                            if os.path.exists(max_path) and os.path.exists(max_info):
+                                try:
+                                    with open(max_info) as f:
+                                        max_freq = f.read().strip()
+                                    with open(max_path, "w") as f:
+                                        f.write(max_freq)
+                                except (PermissionError, ValueError):
+                                    pass
+                
+                print(f"✅ Perfil '{profile_name}' aplicado: governor={applied_governor}")
                 
             except Exception as e:
                 print(f"Erro ao aplicar perfil {profile_name}: {e}")
@@ -699,7 +745,7 @@ class SensorServer:
                 "action": "set_profile",
                 "success": success,
                 "profile": profile_name,
-                "governor": governor,
+                "governor": applied_governor,
             }))
         
         elif action == "get_sensors":
