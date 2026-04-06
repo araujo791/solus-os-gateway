@@ -1,10 +1,11 @@
-import { Cpu, Thermometer, Zap, Gauge, CircuitBoard, BatteryCharging } from "lucide-react";
+import { Cpu, Zap, Gauge, BatteryCharging } from "lucide-react";
 import { GaugeChart } from "@/components/dashboard/GaugeChart";
 import { StatusBar } from "@/components/dashboard/StatusBar";
 import { TempChart } from "@/components/dashboard/TempChart";
 import { PowerProfile } from "@/components/dashboard/PowerProfile";
 import { SensorCard } from "@/components/dashboard/SensorCard";
 import { MemoryPanel } from "@/components/dashboard/MemoryPanel";
+import { FanControl } from "@/components/dashboard/FanControl";
 import { useSimulatedSensors } from "@/hooks/useSimulatedSensors";
 
 export default function Index() {
@@ -68,7 +69,7 @@ export default function Index() {
           <PowerProfile active={sensors.profile} onChange={sensors.setProfile} />
         </div>
 
-        {/* Coluna Direita - Memória & Sistema */}
+        {/* Coluna Direita - Memória, Fans & Sistema */}
         <div className="space-y-4">
           <MemoryPanel
             totalGb={sensors.memTotalGb}
@@ -78,6 +79,36 @@ export default function Index() {
             occupiedSlots={sensors.memOccupiedSlots}
             slots={sensors.memSlots}
           />
+
+          {/* Controle de Fans */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Ventiladores
+            </h3>
+            <div className="space-y-3">
+              <FanControl
+                name="Fan 1"
+                rpm={sensors.fan1Rpm}
+                maxRpm={3500}
+                speed={sensors.fan1Speed}
+                onSpeedChange={sensors.setFan1Speed}
+              />
+              <FanControl
+                name="Fan 2"
+                rpm={sensors.fan2Rpm}
+                maxRpm={3000}
+                speed={sensors.fan2Speed}
+                onSpeedChange={sensors.setFan2Speed}
+              />
+              <FanControl
+                name="Fan 3"
+                rpm={sensors.fan3Rpm}
+                maxRpm={4000}
+                speed={sensors.fan3Speed}
+                onSpeedChange={sensors.setFan3Speed}
+              />
+            </div>
+          </div>
 
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">

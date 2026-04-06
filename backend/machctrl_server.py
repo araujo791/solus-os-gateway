@@ -177,7 +177,7 @@ def get_cpu_info():
 
 
 def get_memory_info():
-    """Obtém uso de memória e informações dos slots via dmidecode."""
+    """Obtém uso de memória e informações dos slots via dmidecode (como GtkStressTesting)."""
     mem = psutil.virtual_memory()
     info = {
         "usage": round(mem.percent, 1),
@@ -190,48 +190,83 @@ def get_memory_info():
 
     try:
         result = subprocess.run(
-            ["dmidecode", "-t", "memory"],
+            ["dmidecode", "-t", "17"],
             capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
             output = result.stdout
-            # Parse memory devices
+            # Cada "Memory Device" é um slot físico
             devices = output.split("Memory Device")
             for dev in devices[1:]:  # skip header
+                # Ignora entradas que são sub-headers (Physical Memory Array etc.)
+                if "Size:" not in dev:
+                    continue
+                
                 info["total_slots"] += 1
-                size_match = re.search(r"Size:\s+(\d+)\s*(MB|GB|TB)", dev)
-                if size_match:
-                    info["occupied_slots"] += 1
-                    size_val = int(size_match.group(1))
-                    size_unit = size_match.group(2)
-                    if size_unit == "MB":
-                        size_gb = round(size_val / 1024, 1)
-                    elif size_unit == "TB":
-                        size_gb = size_val * 1024
-                    else:
-                        size_gb = size_val
+                
+                # Verifica se o slot está vazio
+                size_line = re.search(r"Size:\s+(.+)", dev)
+                if not size_line:
+                    continue
+                size_text = size_line.group(1).strip()
+                
+                # Slots vazios: "No Module Installed", "Not Installed", "0", etc.
+                if "No Module" in size_text or "Not Installed" in size_text or size_text == "0":
+                    continue
+                
+                size_match = re.match(r"(\d+)\s*(MB|GB|TB|kB)", size_text)
+                if not size_match:
+                    continue
+                
+                info["occupied_slots"] += 1
+                size_val = int(size_match.group(1))
+                size_unit = size_match.group(2)
+                if size_unit == "kB":
+                    size_gb = round(size_val / (1024 * 1024), 2)
+                elif size_unit == "MB":
+                    size_gb = round(size_val / 1024, 1)
+                elif size_unit == "TB":
+                    size_gb = size_val * 1024
+                else:
+                    size_gb = size_val
 
-                    speed_match = re.search(r"Speed:\s+(\d+)\s*MT/s", dev)
-                    conf_speed_match = re.search(r"Configured Memory Speed:\s+(\d+)\s*MT/s", dev)
-                    voltage_match = re.search(r"Configured Voltage:\s+([\d.]+)\s*V", dev)
-                    type_match = re.search(r"Type:\s+(\S+)", dev)
-                    locator_match = re.search(r"Locator:\s+(.+)", dev)
-                    manufacturer_match = re.search(r"Manufacturer:\s+(.+)", dev)
-                    part_match = re.search(r"Part Number:\s+(.+)", dev)
+                # Extrai Speed (suporta MHz e MT/s)
+                speed_match = re.search(r"^\s*Speed:\s+(\d+)\s*(MHz|MT/s)", dev, re.MULTILINE)
+                conf_speed_match = re.search(r"Configured (?:Memory |Clock )?Speed:\s+(\d+)\s*(MHz|MT/s)", dev)
+                voltage_match = re.search(r"Configured Voltage:\s+([\d.]+)\s*V", dev)
+                if not voltage_match:
+                    voltage_match = re.search(r"Minimum Voltage:\s+([\d.]+)\s*V", dev)
+                type_match = re.search(r"^\s*Type:\s+(\S+)", dev, re.MULTILINE)
+                locator_match = re.search(r"^\s*Locator:\s+(.+)", dev, re.MULTILINE)
+                bank_match = re.search(r"Bank Locator:\s+(.+)", dev)
+                manufacturer_match = re.search(r"Manufacturer:\s+(.+)", dev)
+                part_match = re.search(r"Part Number:\s+(.+)", dev)
+                serial_match = re.search(r"Serial Number:\s+(.+)", dev)
+                rank_match = re.search(r"Rank:\s+(\d+)", dev)
 
-                    slot = {
-                        "locator": locator_match.group(1).strip() if locator_match else "?",
-                        "size_gb": size_gb,
-                        "type": type_match.group(1).strip() if type_match else "?",
-                        "speed_mhz": int(speed_match.group(1)) if speed_match else 0,
-                        "configured_speed_mhz": int(conf_speed_match.group(1)) if conf_speed_match else 0,
-                        "voltage": float(voltage_match.group(1)) if voltage_match else 0,
-                        "manufacturer": manufacturer_match.group(1).strip() if manufacturer_match else "?",
-                        "part_number": part_match.group(1).strip() if part_match else "?",
-                    }
-                    info["slots"].append(slot)
-    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
-        pass
+                locator = locator_match.group(1).strip() if locator_match else "?"
+                bank = bank_match.group(1).strip() if bank_match else ""
+                manufacturer = manufacturer_match.group(1).strip() if manufacturer_match else "?"
+                # Limpa fabricantes genéricos
+                if manufacturer in ("Unknown", "Not Specified", "Undefined", ""):
+                    manufacturer = "?"
+
+                slot = {
+                    "locator": locator,
+                    "bank": bank,
+                    "size_gb": size_gb,
+                    "type": type_match.group(1).strip() if type_match else "?",
+                    "speed_mhz": int(speed_match.group(1)) if speed_match else 0,
+                    "configured_speed_mhz": int(conf_speed_match.group(1)) if conf_speed_match else 0,
+                    "voltage": float(voltage_match.group(1)) if voltage_match else 0,
+                    "manufacturer": manufacturer,
+                    "part_number": part_match.group(1).strip() if part_match else "?",
+                    "serial": serial_match.group(1).strip() if serial_match else "",
+                    "rank": int(rank_match.group(1)) if rank_match else 0,
+                }
+                info["slots"].append(slot)
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
+        print(f"⚠️  dmidecode não disponível ou sem permissão: {e}")
 
     return info
 
@@ -519,6 +554,79 @@ class SensorServer:
                     "success": success,
                     "fan": pwm_name,
                 }))
+        
+        elif action == "set_profile":
+            profile_name = cmd.get("profile", "balanced")
+            # Perfis de energia aplicam governador de CPU
+            governors = {
+                "silent": "powersave",
+                "balanced": "ondemand",
+                "performance": "performance",
+                "turbo": "performance",
+            }
+            governor = governors.get(profile_name, "ondemand")
+            success = True
+            try:
+                # Aplica governador a todos os cores (como GtkStressTesting)
+                cpu_count = psutil.cpu_count(logical=True) or 1
+                for i in range(cpu_count):
+                    gov_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_governor"
+                    if os.path.exists(gov_path):
+                        try:
+                            with open(gov_path, "w") as f:
+                                f.write(governor)
+                        except PermissionError:
+                            success = False
+                
+                # Perfil turbo: desabilita intel_pstate no_turbo
+                turbo_path = "/sys/devices/system/cpu/intel_pstate/no_turbo"
+                if os.path.exists(turbo_path):
+                    try:
+                        with open(turbo_path, "w") as f:
+                            f.write("0" if profile_name == "turbo" else "1" if profile_name == "silent" else "0")
+                    except PermissionError:
+                        pass
+                
+                # Perfil silent: limita frequência máxima
+                if profile_name == "silent":
+                    for i in range(psutil.cpu_count(logical=True) or 1):
+                        max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
+                        min_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_min_freq"
+                        max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
+                        if os.path.exists(max_path) and os.path.exists(max_info):
+                            try:
+                                with open(max_info) as f:
+                                    max_freq = int(f.read().strip())
+                                # Limita a 60% da frequência máxima
+                                with open(max_path, "w") as f:
+                                    f.write(str(int(max_freq * 0.6)))
+                            except (PermissionError, ValueError):
+                                pass
+                else:
+                    # Restaura frequência máxima
+                    for i in range(psutil.cpu_count(logical=True) or 1):
+                        max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
+                        max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
+                        if os.path.exists(max_path) and os.path.exists(max_info):
+                            try:
+                                with open(max_info) as f:
+                                    max_freq = f.read().strip()
+                                with open(max_path, "w") as f:
+                                    f.write(max_freq)
+                            except (PermissionError, ValueError):
+                                pass
+                
+            except Exception as e:
+                print(f"Erro ao aplicar perfil {profile_name}: {e}")
+                success = False
+            
+            await websocket.send(json.dumps({
+                "type": "command_result",
+                "action": "set_profile",
+                "success": success,
+                "profile": profile_name,
+                "governor": governor,
+            }))
         
         elif action == "get_sensors":
             data = self.read_all_sensors()
