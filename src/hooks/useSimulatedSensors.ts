@@ -255,12 +255,21 @@ export function useSimulatedSensors() {
     };
   }, []);
 
-  // Envia comandos de fan ao backend
-  const sendFanCommand = useCallback((fan: string, speed: number) => {
+  // Envia comandos ao backend
+  const sendCommand = useCallback((cmd: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ action: "set_fan_speed", fan, speed }));
+      wsRef.current.send(JSON.stringify(cmd));
     }
   }, []);
+
+  const sendFanCommand = useCallback((fan: string, speed: number) => {
+    sendCommand({ action: "set_fan_speed", fan, speed });
+  }, [sendCommand]);
+
+  const handleSetProfile = useCallback((profileId: string) => {
+    setProfile(profileId);
+    sendCommand({ action: "set_profile", profile: profileId });
+  }, [sendCommand]);
 
   return {
     cpuTemp, gpuTemp, boardTemp,
@@ -271,7 +280,7 @@ export function useSimulatedSensors() {
     fan3Speed, setFan3Speed: (v: number) => { setFan3Speed(v); sendFanCommand("fan3", v); },
     cpuFreq, cpuVoltage, cpuPower,
     tempHistory,
-    profile, setProfile,
+    profile, setProfile: handleSetProfile,
     connected,
     systemInfo,
     detectedSensors,
