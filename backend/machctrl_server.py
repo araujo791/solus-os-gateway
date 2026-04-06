@@ -487,12 +487,16 @@ class SensorServer:
         """Lê todos os sensores e retorna os dados."""
         now = datetime.now()
         
-        # Temperaturas
+        # Temperaturas - usa categorias classificadas
         temperatures = {}
         for label, path in self.temp_sensors.items():
             value = read_sensor_file(path)
             if value is not None:
-                temperatures[label] = round(value / 1000, 1)  # millicelsius -> celsius
+                category = self.temp_label_map.get(label, label)
+                temp_c = round(value / 1000, 1)
+                # Filtra leituras absurdas (sensores desconectados)
+                if -40 < temp_c < 150:
+                    temperatures[category] = temp_c
         
         # Fans
         fans = {}
@@ -509,23 +513,40 @@ class SensorServer:
             if pwm_val is not None:
                 fans.setdefault(name, {})["speed_percent"] = round(pwm_val / 255 * 100)
         
-        # CPU & Memória
+        # CPU
         cpu_info = get_cpu_info()
-        mem_info = get_memory_info()
+        
+        # Memória - usa cache para slots, só atualiza usage via psutil
+        mem = psutil.virtual_memory()
+        mem_info = {
+            "usage": round(mem.percent, 1),
+            "total_gb": round(mem.total / (1024**3), 1),
+            "used_gb": round(mem.used / (1024**3), 1),
+            "slots": self.memory_slots_cache["slots"] if self.memory_slots_cache else [],
+            "total_slots": self.memory_slots_cache["total_slots"] if self.memory_slots_cache else 0,
+            "occupied_slots": self.memory_slots_cache["occupied_slots"] if self.memory_slots_cache else 0,
+        }
         
         # Atualiza uptime
         self.system_info["uptime"] = get_system_info()["uptime"]
         
-        # Histórico de temperatura
-        temp_point = {
-            "time": now.strftime("%M:%S"),
-        }
-        for label, value in temperatures.items():
-            # Simplifica o nome para o gráfico
-            simple_label = label.split("/")[-1].lower().replace(" ", "_")
-            temp_point[simple_label] = value
-        
+        # Histórico de temperatura (usa categorias simplificadas)
+        temp_point = {"time": now.strftime("%M:%S")}
+        # Garante que cpu, gpu, board existam no histórico
+        temp_point["cpu"] = temperatures.get("cpu", 0)
+        temp_point["gpu"] = temperatures.get("gpu", 0)
+        temp_point["board"] = temperatures.get("board", 0)
         self.temp_history.append(temp_point)
+        
+        # Detecta governador atual
+        current_governor = ""
+        try:
+            gov_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+            if os.path.exists(gov_path):
+                with open(gov_path) as f:
+                    current_governor = f.read().strip()
+        except Exception:
+            pass
         
         return {
             "type": "sensor_data",
@@ -536,6 +557,7 @@ class SensorServer:
             "memory": mem_info,
             "system": self.system_info,
             "temp_history": list(self.temp_history),
+            "current_governor": current_governor,
             "detected_sensors": {
                 "temp_count": len(self.temp_sensors),
                 "fan_count": len(self.fan_sensors),
