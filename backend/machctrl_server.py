@@ -384,8 +384,42 @@ class SensorServer:
         self.pwm_controls = {}
         self.temp_history = deque(maxlen=60)
         self.system_info = {}
+        self.memory_slots_cache = None  # Cache dmidecode (só lê uma vez)
+        self.temp_label_map = {}  # Mapa: label original -> categoria (cpu/gpu/board/nvme)
         
         self.detect_hardware()
+    
+    def _classify_temp_sensors(self):
+        """Classifica sensores de temp em categorias: cpu, gpu, board, nvme."""
+        cpu_idx = 0
+        for label in self.temp_sensors:
+            lower = label.lower()
+            chip = label.split("/")[0] if "/" in label else ""
+            sensor_name = label.split("/")[1] if "/" in label else label
+            
+            if "coretemp" in chip:
+                if "package" in lower:
+                    self.temp_label_map[label] = "cpu"
+                else:
+                    core_label = sensor_name.lower().replace(" ", "_")
+                    self.temp_label_map[label] = core_label
+            elif "amdgpu" in chip:
+                self.temp_label_map[label] = "gpu"
+            elif "nvme" in chip:
+                self.temp_label_map[label] = f"nvme_{chip}"
+            elif "nct" in chip or "it87" in chip or "w83" in chip:
+                if "systin" in lower:
+                    self.temp_label_map[label] = "board"
+                elif "cputin" in lower:
+                    self.temp_label_map[label] = "cpu_board"
+                elif "auxtin" in lower:
+                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
+                elif "peci" in lower:
+                    self.temp_label_map[label] = "peci"
+                else:
+                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
+            else:
+                self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
     
     def detect_hardware(self):
         """Detecta todo o hardware disponível."""
@@ -422,6 +456,24 @@ class SensorServer:
             for name, info in self.pwm_controls.items():
                 print(f"   • {name}: {info['pwm']}")
         
+        # Classifica sensores de temperatura
+        self._classify_temp_sensors()
+        print(f"\n🌡️  Mapa de temperaturas:")
+        for label, category in self.temp_label_map.items():
+            print(f"   • {label} → {category}")
+        
+        # Cache de memória (dmidecode é lento, só lê uma vez)
+        print("\n💾 Detectando slots de memória...")
+        mem_info = get_memory_info()
+        self.memory_slots_cache = {
+            "slots": mem_info["slots"],
+            "total_slots": mem_info["total_slots"],
+            "occupied_slots": mem_info["occupied_slots"],
+        }
+        print(f"   Slots: {self.memory_slots_cache['occupied_slots']}/{self.memory_slots_cache['total_slots']} ocupados")
+        for s in self.memory_slots_cache["slots"]:
+            print(f"   • {s['locator']}: {s['size_gb']}GB {s['type']} @ {s['configured_speed_mhz']}MT/s")
+        
         self.system_info = get_system_info()
         print(f"\n💻 Sistema: {self.system_info.get('os', 'N/A')}")
         print(f"   Kernel: {self.system_info.get('kernel', 'N/A')}")
@@ -435,12 +487,16 @@ class SensorServer:
         """Lê todos os sensores e retorna os dados."""
         now = datetime.now()
         
-        # Temperaturas
+        # Temperaturas - usa categorias classificadas
         temperatures = {}
         for label, path in self.temp_sensors.items():
             value = read_sensor_file(path)
             if value is not None:
-                temperatures[label] = round(value / 1000, 1)  # millicelsius -> celsius
+                category = self.temp_label_map.get(label, label)
+                temp_c = round(value / 1000, 1)
+                # Filtra leituras absurdas (sensores desconectados)
+                if -40 < temp_c < 150:
+                    temperatures[category] = temp_c
         
         # Fans
         fans = {}
@@ -457,23 +513,40 @@ class SensorServer:
             if pwm_val is not None:
                 fans.setdefault(name, {})["speed_percent"] = round(pwm_val / 255 * 100)
         
-        # CPU & Memória
+        # CPU
         cpu_info = get_cpu_info()
-        mem_info = get_memory_info()
+        
+        # Memória - usa cache para slots, só atualiza usage via psutil
+        mem = psutil.virtual_memory()
+        mem_info = {
+            "usage": round(mem.percent, 1),
+            "total_gb": round(mem.total / (1024**3), 1),
+            "used_gb": round(mem.used / (1024**3), 1),
+            "slots": self.memory_slots_cache["slots"] if self.memory_slots_cache else [],
+            "total_slots": self.memory_slots_cache["total_slots"] if self.memory_slots_cache else 0,
+            "occupied_slots": self.memory_slots_cache["occupied_slots"] if self.memory_slots_cache else 0,
+        }
         
         # Atualiza uptime
         self.system_info["uptime"] = get_system_info()["uptime"]
         
-        # Histórico de temperatura
-        temp_point = {
-            "time": now.strftime("%M:%S"),
-        }
-        for label, value in temperatures.items():
-            # Simplifica o nome para o gráfico
-            simple_label = label.split("/")[-1].lower().replace(" ", "_")
-            temp_point[simple_label] = value
-        
+        # Histórico de temperatura (usa categorias simplificadas)
+        temp_point = {"time": now.strftime("%M:%S")}
+        # Garante que cpu, gpu, board existam no histórico
+        temp_point["cpu"] = temperatures.get("cpu", 0)
+        temp_point["gpu"] = temperatures.get("gpu", 0)
+        temp_point["board"] = temperatures.get("board", 0)
         self.temp_history.append(temp_point)
+        
+        # Detecta governador atual
+        current_governor = ""
+        try:
+            gov_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+            if os.path.exists(gov_path):
+                with open(gov_path) as f:
+                    current_governor = f.read().strip()
+        except Exception:
+            pass
         
         return {
             "type": "sensor_data",
@@ -484,6 +557,7 @@ class SensorServer:
             "memory": mem_info,
             "system": self.system_info,
             "temp_history": list(self.temp_history),
+            "current_governor": current_governor,
             "detected_sensors": {
                 "temp_count": len(self.temp_sensors),
                 "fan_count": len(self.fan_sensors),
@@ -557,18 +631,49 @@ class SensorServer:
         
         elif action == "set_profile":
             profile_name = cmd.get("profile", "balanced")
-            # Perfis de energia aplicam governador de CPU
-            governors = {
-                "silent": "powersave",
-                "balanced": "ondemand",
-                "performance": "performance",
-                "turbo": "performance",
-            }
-            governor = governors.get(profile_name, "ondemand")
             success = True
+            applied_governor = ""
+            
             try:
-                # Aplica governador a todos os cores (como GtkStressTesting)
                 cpu_count = psutil.cpu_count(logical=True) or 1
+                
+                # Detecta governadores disponíveis (intel_pstate vs acpi-cpufreq)
+                available_governors = []
+                avail_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"
+                if os.path.exists(avail_path):
+                    with open(avail_path) as f:
+                        available_governors = f.read().strip().split()
+                
+                has_pstate = os.path.exists("/sys/devices/system/cpu/intel_pstate")
+                print(f"📊 Governadores disponíveis: {available_governors}, intel_pstate: {has_pstate}")
+                
+                # Mapeia perfil -> governador baseado no que está disponível
+                if has_pstate:
+                    # intel_pstate: só performance/powersave
+                    gov_map = {
+                        "silent": "powersave",
+                        "balanced": "powersave",
+                        "performance": "performance",
+                        "turbo": "performance",
+                    }
+                else:
+                    gov_map = {
+                        "silent": "powersave",
+                        "balanced": "schedutil" if "schedutil" in available_governors else
+                                    "ondemand" if "ondemand" in available_governors else "powersave",
+                        "performance": "performance",
+                        "turbo": "performance",
+                    }
+                
+                governor = gov_map.get(profile_name, "powersave")
+                if governor not in available_governors and available_governors:
+                    # Fallback para o mais próximo disponível
+                    governor = available_governors[0]
+                    print(f"⚠️  Governador desejado não disponível, usando: {governor}")
+                
+                applied_governor = governor
+                
+                # Aplica governador a todos os cores
                 for i in range(cpu_count):
                     gov_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_governor"
                     if os.path.exists(gov_path):
@@ -578,43 +683,58 @@ class SensorServer:
                         except PermissionError:
                             success = False
                 
-                # Perfil turbo: desabilita intel_pstate no_turbo
-                turbo_path = "/sys/devices/system/cpu/intel_pstate/no_turbo"
-                if os.path.exists(turbo_path):
-                    try:
-                        with open(turbo_path, "w") as f:
-                            f.write("0" if profile_name == "turbo" else "1" if profile_name == "silent" else "0")
-                    except PermissionError:
-                        pass
-                
-                # Perfil silent: limita frequência máxima
-                if profile_name == "silent":
-                    for i in range(psutil.cpu_count(logical=True) or 1):
-                        max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
-                        min_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_min_freq"
-                        max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
-                        if os.path.exists(max_path) and os.path.exists(max_info):
+                # intel_pstate: controla turbo e limites de frequência via max/min_perf_pct
+                if has_pstate:
+                    turbo_path = "/sys/devices/system/cpu/intel_pstate/no_turbo"
+                    min_perf = "/sys/devices/system/cpu/intel_pstate/min_perf_pct"
+                    max_perf = "/sys/devices/system/cpu/intel_pstate/max_perf_pct"
+                    
+                    perf_settings = {
+                        "silent":      {"no_turbo": "1", "min_perf": "15", "max_perf": "50"},
+                        "balanced":    {"no_turbo": "0", "min_perf": "20", "max_perf": "80"},
+                        "performance": {"no_turbo": "0", "min_perf": "30", "max_perf": "100"},
+                        "turbo":       {"no_turbo": "0", "min_perf": "50", "max_perf": "100"},
+                    }
+                    settings = perf_settings.get(profile_name, perf_settings["balanced"])
+                    
+                    for path, val in [(turbo_path, settings["no_turbo"]),
+                                       (min_perf, settings["min_perf"]),
+                                       (max_perf, settings["max_perf"])]:
+                        if os.path.exists(path):
                             try:
-                                with open(max_info) as f:
-                                    max_freq = int(f.read().strip())
-                                # Limita a 60% da frequência máxima
-                                with open(max_path, "w") as f:
-                                    f.write(str(int(max_freq * 0.6)))
-                            except (PermissionError, ValueError):
-                                pass
+                                with open(path, "w") as f:
+                                    f.write(val)
+                                print(f"   ✅ {path} = {val}")
+                            except PermissionError:
+                                print(f"   ❌ Sem permissão: {path}")
                 else:
-                    # Restaura frequência máxima
-                    for i in range(psutil.cpu_count(logical=True) or 1):
-                        max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
-                        max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
-                        if os.path.exists(max_path) and os.path.exists(max_info):
-                            try:
-                                with open(max_info) as f:
-                                    max_freq = f.read().strip()
-                                with open(max_path, "w") as f:
-                                    f.write(max_freq)
-                            except (PermissionError, ValueError):
-                                pass
+                    # acpi-cpufreq: controla via scaling_max_freq
+                    if profile_name == "silent":
+                        for i in range(cpu_count):
+                            max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
+                            max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
+                            if os.path.exists(max_path) and os.path.exists(max_info):
+                                try:
+                                    with open(max_info) as f:
+                                        max_freq = int(f.read().strip())
+                                    with open(max_path, "w") as f:
+                                        f.write(str(int(max_freq * 0.6)))
+                                except (PermissionError, ValueError):
+                                    pass
+                    else:
+                        for i in range(cpu_count):
+                            max_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_max_freq"
+                            max_info = f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq"
+                            if os.path.exists(max_path) and os.path.exists(max_info):
+                                try:
+                                    with open(max_info) as f:
+                                        max_freq = f.read().strip()
+                                    with open(max_path, "w") as f:
+                                        f.write(max_freq)
+                                except (PermissionError, ValueError):
+                                    pass
+                
+                print(f"✅ Perfil '{profile_name}' aplicado: governor={applied_governor}")
                 
             except Exception as e:
                 print(f"Erro ao aplicar perfil {profile_name}: {e}")
@@ -625,7 +745,7 @@ class SensorServer:
                 "action": "set_profile",
                 "success": success,
                 "profile": profile_name,
-                "governor": governor,
+                "governor": applied_governor,
             }))
         
         elif action == "get_sensors":
