@@ -130,11 +130,11 @@ export function useSimulatedSensors() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === "sensor_data" || data.type === "initial_data") {
-              // Mapeia temperaturas
-              const temps = Object.values(data.temperatures || {}) as number[];
-              if (temps.length > 0) setCpuTemp(temps[0]);
-              if (temps.length > 1) setGpuTemp(temps[1]);
-              if (temps.length > 2) setBoardTemp(temps[2]);
+              // Temperaturas - backend já envia com chaves classificadas (cpu, gpu, board)
+              const temps = data.temperatures || {};
+              if (temps.cpu !== undefined) setCpuTemp(temps.cpu);
+              if (temps.gpu !== undefined) setGpuTemp(temps.gpu);
+              if (temps.board !== undefined) setBoardTemp(temps.board);
 
               // CPU & Memória
               if (data.cpu) {
@@ -147,7 +147,7 @@ export function useSimulatedSensors() {
                 setMemUsedGb(data.memory.used_gb || 0);
                 if (data.memory.total_slots !== undefined) setMemTotalSlots(data.memory.total_slots);
                 if (data.memory.occupied_slots !== undefined) setMemOccupiedSlots(data.memory.occupied_slots);
-                if (data.memory.slots) setMemSlots(data.memory.slots);
+                if (Array.isArray(data.memory.slots)) setMemSlots(data.memory.slots);
               }
 
               // Fans
@@ -185,13 +185,13 @@ export function useSimulatedSensors() {
                 });
               }
 
-              // Histórico
+              // Histórico - backend já envia com cpu/gpu/board
               if (data.temp_history && data.temp_history.length > 0) {
                 setTempHistory(data.temp_history.map((p: any) => ({
-                  time: p.time,
-                  cpu: Object.values(p).filter((v): v is number => typeof v === "number")[0] || 0,
-                  gpu: Object.values(p).filter((v): v is number => typeof v === "number")[1] || 0,
-                  board: Object.values(p).filter((v): v is number => typeof v === "number")[2] || 0,
+                  time: p.time || "",
+                  cpu: p.cpu || 0,
+                  gpu: p.gpu || 0,
+                  board: p.board || 0,
                 })));
               }
             }
