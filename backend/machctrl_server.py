@@ -384,8 +384,42 @@ class SensorServer:
         self.pwm_controls = {}
         self.temp_history = deque(maxlen=60)
         self.system_info = {}
+        self.memory_slots_cache = None  # Cache dmidecode (só lê uma vez)
+        self.temp_label_map = {}  # Mapa: label original -> categoria (cpu/gpu/board/nvme)
         
         self.detect_hardware()
+    
+    def _classify_temp_sensors(self):
+        """Classifica sensores de temp em categorias: cpu, gpu, board, nvme."""
+        cpu_idx = 0
+        for label in self.temp_sensors:
+            lower = label.lower()
+            chip = label.split("/")[0] if "/" in label else ""
+            sensor_name = label.split("/")[1] if "/" in label else label
+            
+            if "coretemp" in chip:
+                if "package" in lower:
+                    self.temp_label_map[label] = "cpu"
+                else:
+                    core_label = sensor_name.lower().replace(" ", "_")
+                    self.temp_label_map[label] = core_label
+            elif "amdgpu" in chip:
+                self.temp_label_map[label] = "gpu"
+            elif "nvme" in chip:
+                self.temp_label_map[label] = f"nvme_{chip}"
+            elif "nct" in chip or "it87" in chip or "w83" in chip:
+                if "systin" in lower:
+                    self.temp_label_map[label] = "board"
+                elif "cputin" in lower:
+                    self.temp_label_map[label] = "cpu_board"
+                elif "auxtin" in lower:
+                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
+                elif "peci" in lower:
+                    self.temp_label_map[label] = "peci"
+                else:
+                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
+            else:
+                self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
     
     def detect_hardware(self):
         """Detecta todo o hardware disponível."""
@@ -421,6 +455,24 @@ class SensorServer:
             print(f"\n🎛️  Controles PWM encontrados: {len(self.pwm_controls)}")
             for name, info in self.pwm_controls.items():
                 print(f"   • {name}: {info['pwm']}")
+        
+        # Classifica sensores de temperatura
+        self._classify_temp_sensors()
+        print(f"\n🌡️  Mapa de temperaturas:")
+        for label, category in self.temp_label_map.items():
+            print(f"   • {label} → {category}")
+        
+        # Cache de memória (dmidecode é lento, só lê uma vez)
+        print("\n💾 Detectando slots de memória...")
+        mem_info = get_memory_info()
+        self.memory_slots_cache = {
+            "slots": mem_info["slots"],
+            "total_slots": mem_info["total_slots"],
+            "occupied_slots": mem_info["occupied_slots"],
+        }
+        print(f"   Slots: {self.memory_slots_cache['occupied_slots']}/{self.memory_slots_cache['total_slots']} ocupados")
+        for s in self.memory_slots_cache["slots"]:
+            print(f"   • {s['locator']}: {s['size_gb']}GB {s['type']} @ {s['configured_speed_mhz']}MT/s")
         
         self.system_info = get_system_info()
         print(f"\n💻 Sistema: {self.system_info.get('os', 'N/A')}")
