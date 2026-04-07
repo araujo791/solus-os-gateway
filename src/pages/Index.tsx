@@ -6,6 +6,7 @@ import { PowerProfile } from "@/components/dashboard/PowerProfile";
 import { SensorCard } from "@/components/dashboard/SensorCard";
 import { MemoryPanel } from "@/components/dashboard/MemoryPanel";
 import { FanControl } from "@/components/dashboard/FanControl";
+import { DiskPanel } from "@/components/dashboard/DiskPanel";
 import { useSimulatedSensors } from "@/hooks/useSimulatedSensors";
 
 export default function Index() {
@@ -25,7 +26,7 @@ export default function Index() {
               Mach<span className="text-primary text-glow-primary">Ctrl</span>
             </h1>
             <p className="font-mono text-[10px] text-muted-foreground">
-              Machinist E5 D8 Max • Monitor de Hardware
+              {sensors.systemInfo.board} • Monitor de Hardware
             </p>
           </div>
         </div>
@@ -66,10 +67,10 @@ export default function Index() {
         {/* Coluna Central - Gráfico & Perfil */}
         <div className="space-y-4">
           <TempChart data={sensors.tempHistory} />
-          <PowerProfile active={sensors.profile} onChange={sensors.setProfile} />
+          <PowerProfile active={sensors.profile} available={sensors.availableProfiles} onChange={sensors.setProfile} />
         </div>
 
-        {/* Coluna Direita - Memória, Fans & Sistema */}
+        {/* Coluna Direita - Memória, Discos, Fans & Sistema */}
         <div className="space-y-4">
           <MemoryPanel
             totalGb={sensors.memTotalGb}
@@ -80,6 +81,11 @@ export default function Index() {
             slots={sensors.memSlots}
           />
 
+          <DiskPanel
+            partitions={sensors.diskPartitions}
+            ioRates={sensors.diskIoRates}
+          />
+
           {/* Controle de Fans */}
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -88,24 +94,30 @@ export default function Index() {
             <div className="space-y-3">
               <FanControl
                 name="Fan 1"
+                label={sensors.fanLabels[0] || "GPU"}
                 rpm={sensors.fan1Rpm}
                 maxRpm={3500}
                 speed={sensors.fan1Speed}
                 onSpeedChange={sensors.setFan1Speed}
+                onAutoMode={() => sensors.sendFanAuto("fan1")}
               />
               <FanControl
                 name="Fan 2"
+                label={sensors.fanLabels[1] || "CPU 1"}
                 rpm={sensors.fan2Rpm}
                 maxRpm={3000}
                 speed={sensors.fan2Speed}
                 onSpeedChange={sensors.setFan2Speed}
+                onAutoMode={() => sensors.sendFanAuto("fan2")}
               />
               <FanControl
                 name="Fan 3"
+                label={sensors.fanLabels[2] || "CPU 2"}
                 rpm={sensors.fan3Rpm}
                 maxRpm={4000}
                 speed={sensors.fan3Speed}
                 onSpeedChange={sensors.setFan3Speed}
+                onAutoMode={() => sensors.sendFanAuto("fan3")}
               />
             </div>
           </div>

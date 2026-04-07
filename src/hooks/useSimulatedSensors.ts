@@ -30,41 +30,26 @@ interface MemorySlot {
   part_number: string;
 }
 
-interface SensorData {
-  cpuTemp: number;
-  gpuTemp: number;
-  boardTemp: number;
-  cpuUsage: number;
-  memUsage: number;
-  memTotalGb: number;
-  memUsedGb: number;
-  memTotalSlots: number;
-  memOccupiedSlots: number;
-  memSlots: MemorySlot[];
-  fan1Rpm: number;
-  fan2Rpm: number;
-  fan3Rpm: number;
-  fan1Speed: number;
-  fan2Speed: number;
-  fan3Speed: number;
-  cpuFreq: number;
-  cpuVoltage: number;
-  cpuPower: number;
-  tempHistory: { time: string; cpu: number; gpu: number; board: number }[];
-  profile: string;
-  connected: boolean;
-  systemInfo: {
-    board: string;
-    cpu: string;
-    kernel: string;
-    os: string;
-    uptime: string;
-  };
-  detectedSensors: {
-    tempCount: number;
-    fanCount: number;
-    pwmCount: number;
-  };
+interface DiskPartition {
+  device: string;
+  mountpoint: string;
+  fstype: string;
+  total_gb: number;
+  used_gb: number;
+  free_gb: number;
+  usage_percent: number;
+}
+
+interface DiskIoRate {
+  read_mb_s: number;
+  write_mb_s: number;
+}
+
+interface FanEntry {
+  label: string;
+  rpm: number;
+  speed_percent: number;
+  has_pwm: boolean;
 }
 
 const WS_URL = "ws://localhost:8765";
@@ -83,17 +68,15 @@ export function useSimulatedSensors() {
   const [fan3Speed, setFan3Speed] = useState(55);
   const [cpuFreq, setCpuFreq] = useState(3.8);
   const [cpuVoltage, setCpuVoltage] = useState(1.25);
-  const [cpuPower, setCpuPower] = useState(65);
+  const [cpuPower, setCpuPower] = useState(0);
   const [tempHistory, setTempHistory] = useState(generateTempHistory);
   const [memTotalGb, setMemTotalGb] = useState(32);
   const [memUsedGb, setMemUsedGb] = useState(13.1);
-  const [memTotalSlots, setMemTotalSlots] = useState(4);
-  const [memOccupiedSlots, setMemOccupiedSlots] = useState(2);
-  const [memSlots, setMemSlots] = useState<MemorySlot[]>([
-    { locator: "DIMM_A1", size_gb: 16, type: "DDR4", speed_mhz: 2400, configured_speed_mhz: 2133, voltage: 1.2, manufacturer: "Samsung", part_number: "M393A2K43CB2" },
-    { locator: "DIMM_B1", size_gb: 16, type: "DDR4", speed_mhz: 2400, configured_speed_mhz: 2133, voltage: 1.2, manufacturer: "Samsung", part_number: "M393A2K43CB2" },
-  ]);
+  const [memTotalSlots, setMemTotalSlots] = useState(0);
+  const [memOccupiedSlots, setMemOccupiedSlots] = useState(0);
+  const [memSlots, setMemSlots] = useState<MemorySlot[]>([]);
   const [profile, setProfile] = useState("balanced");
+  const [availableProfiles, setAvailableProfiles] = useState<string[]>(["silent", "balanced", "performance", "turbo"]);
   const [connected, setConnected] = useState(false);
   const [systemInfo, setSystemInfo] = useState({
     board: "Machinist E5 D8 Max",
@@ -103,13 +86,102 @@ export function useSimulatedSensors() {
     uptime: "0h 00m",
   });
   const [detectedSensors, setDetectedSensors] = useState({ tempCount: 0, fanCount: 0, pwmCount: 0 });
+  const [fanLabels, setFanLabels] = useState<string[]>(["GPU Fan", "CPU Fan 1", "CPU Fan 2"]);
+  const [diskPartitions, setDiskPartitions] = useState<DiskPartition[]>([]);
+  const [diskIoRates, setDiskIoRates] = useState<Record<string, DiskIoRate>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
   const simulationRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Tenta conectar ao backend real
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    function processData(data: any) {
+      // Temperaturas
+      const temps = data.temperatures || {};
+      if (temps.cpu !== undefined) setCpuTemp(temps.cpu);
+      if (temps.gpu !== undefined) setGpuTemp(temps.gpu);
+      if (temps.board !== undefined) setBoardTemp(temps.board);
+
+      // CPU
+      if (data.cpu) {
+        setCpuUsage(Math.round(data.cpu.usage || 0));
+        setCpuFreq(data.cpu.freq || 0);
+      }
+      if (data.cpu_power !== undefined && data.cpu_power > 0) setCpuPower(data.cpu_power);
+      if (data.cpu_voltage !== undefined && data.cpu_voltage > 0) setCpuVoltage(data.cpu_voltage);
+
+      // Memória
+      if (data.memory) {
+        setMemUsage(Math.round(data.memory.usage || 0));
+        setMemTotalGb(data.memory.total_gb || 0);
+        setMemUsedGb(data.memory.used_gb || 0);
+        if (data.memory.total_slots !== undefined) setMemTotalSlots(data.memory.total_slots);
+        if (data.memory.occupied_slots !== undefined) setMemOccupiedSlots(data.memory.occupied_slots);
+        if (Array.isArray(data.memory.slots)) setMemSlots(data.memory.slots);
+      }
+
+      // Fans - agora é uma lista sequencial
+      const fanList: FanEntry[] = Array.isArray(data.fans) ? data.fans : [];
+      if (fanList.length > 0) {
+        setFan1Rpm(fanList[0]?.rpm || 0);
+        setFan1Speed(fanList[0]?.speed_percent || 0);
+      }
+      if (fanList.length > 1) {
+        setFan2Rpm(fanList[1]?.rpm || 0);
+        setFan2Speed(fanList[1]?.speed_percent || 0);
+      }
+      if (fanList.length > 2) {
+        setFan3Rpm(fanList[2]?.rpm || 0);
+        setFan3Speed(fanList[2]?.speed_percent || 0);
+      }
+      // Atualiza labels dos fans
+      if (fanList.length > 0) {
+        setFanLabels(fanList.map((f) => f.label || "Fan"));
+      }
+
+      // Discos
+      if (data.disks) {
+        if (Array.isArray(data.disks.partitions)) setDiskPartitions(data.disks.partitions);
+        if (data.disks.io_rates) setDiskIoRates(data.disks.io_rates);
+      }
+
+      // Perfil de energia
+      if (data.current_profile) setProfile(data.current_profile);
+      if (Array.isArray(data.available_profiles) && data.available_profiles.length > 0) {
+        setAvailableProfiles(data.available_profiles);
+      }
+
+      // Sistema
+      if (data.system) {
+        setSystemInfo({
+          board: data.system.board || "Desconhecida",
+          cpu: data.cpu?.model || "Desconhecido",
+          kernel: data.system.kernel || "",
+          os: data.system.os || "Linux",
+          uptime: data.system.uptime || "",
+        });
+      }
+
+      // Sensores detectados
+      if (data.detected_sensors) {
+        setDetectedSensors({
+          tempCount: data.detected_sensors.temp_count || 0,
+          fanCount: data.detected_sensors.fan_count || 0,
+          pwmCount: data.detected_sensors.pwm_count || 0,
+        });
+      }
+
+      // Histórico
+      if (data.temp_history && data.temp_history.length > 0) {
+        setTempHistory(data.temp_history.map((p: any) => ({
+          time: p.time || "",
+          cpu: p.cpu || 0,
+          gpu: p.gpu || 0,
+          board: p.board || 0,
+        })));
+      }
+    }
 
     function connectWs() {
       try {
@@ -119,7 +191,6 @@ export function useSimulatedSensors() {
         ws.onopen = () => {
           console.log("🟢 Conectado ao MachCtrl Backend");
           setConnected(true);
-          // Para simulação quando conectado
           if (simulationRef.current) {
             clearInterval(simulationRef.current);
             simulationRef.current = null;
@@ -130,70 +201,7 @@ export function useSimulatedSensors() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === "sensor_data" || data.type === "initial_data") {
-              // Temperaturas - backend já envia com chaves classificadas (cpu, gpu, board)
-              const temps = data.temperatures || {};
-              if (temps.cpu !== undefined) setCpuTemp(temps.cpu);
-              if (temps.gpu !== undefined) setGpuTemp(temps.gpu);
-              if (temps.board !== undefined) setBoardTemp(temps.board);
-
-              // CPU & Memória
-              if (data.cpu) {
-                setCpuUsage(Math.round(data.cpu.usage || 0));
-                setCpuFreq(data.cpu.freq || 0);
-              }
-              if (data.memory) {
-                setMemUsage(Math.round(data.memory.usage || 0));
-                setMemTotalGb(data.memory.total_gb || 0);
-                setMemUsedGb(data.memory.used_gb || 0);
-                if (data.memory.total_slots !== undefined) setMemTotalSlots(data.memory.total_slots);
-                if (data.memory.occupied_slots !== undefined) setMemOccupiedSlots(data.memory.occupied_slots);
-                if (Array.isArray(data.memory.slots)) setMemSlots(data.memory.slots);
-              }
-
-              // Fans
-              const fanEntries = Object.values(data.fans || {}) as any[];
-              if (fanEntries.length > 0) {
-                setFan1Rpm(fanEntries[0]?.rpm || 0);
-                setFan1Speed(fanEntries[0]?.speed_percent || 0);
-              }
-              if (fanEntries.length > 1) {
-                setFan2Rpm(fanEntries[1]?.rpm || 0);
-                setFan2Speed(fanEntries[1]?.speed_percent || 0);
-              }
-              if (fanEntries.length > 2) {
-                setFan3Rpm(fanEntries[2]?.rpm || 0);
-                setFan3Speed(fanEntries[2]?.speed_percent || 0);
-              }
-
-              // Sistema
-              if (data.system) {
-                setSystemInfo({
-                  board: data.system.board || "Desconhecida",
-                  cpu: data.cpu?.model || "Desconhecido",
-                  kernel: data.system.kernel || "",
-                  os: data.system.os || "Linux",
-                  uptime: data.system.uptime || "",
-                });
-              }
-
-              // Sensores detectados
-              if (data.detected_sensors) {
-                setDetectedSensors({
-                  tempCount: data.detected_sensors.temp_count || 0,
-                  fanCount: data.detected_sensors.fan_count || 0,
-                  pwmCount: data.detected_sensors.pwm_count || 0,
-                });
-              }
-
-              // Histórico - backend já envia com cpu/gpu/board
-              if (data.temp_history && data.temp_history.length > 0) {
-                setTempHistory(data.temp_history.map((p: any) => ({
-                  time: p.time || "",
-                  cpu: p.cpu || 0,
-                  gpu: p.gpu || 0,
-                  board: p.board || 0,
-                })));
-              }
+              processData(data);
             }
           } catch (e) {
             console.error("Erro ao processar dados:", e);
@@ -205,13 +213,10 @@ export function useSimulatedSensors() {
           setConnected(false);
           wsRef.current = null;
           startSimulation();
-          // Tenta reconectar em 5s
           reconnectTimer = setTimeout(connectWs, 5000);
         };
 
-        ws.onerror = () => {
-          // Silencioso - onclose vai tratar
-        };
+        ws.onerror = () => {};
       } catch {
         startSimulation();
         reconnectTimer = setTimeout(connectWs, 5000);
@@ -255,7 +260,6 @@ export function useSimulatedSensors() {
     };
   }, []);
 
-  // Envia comandos ao backend
   const sendCommand = useCallback((cmd: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(cmd));
@@ -264,6 +268,10 @@ export function useSimulatedSensors() {
 
   const sendFanCommand = useCallback((fan: string, speed: number) => {
     sendCommand({ action: "set_fan_speed", fan, speed });
+  }, [sendCommand]);
+
+  const sendFanAuto = useCallback((fan: string) => {
+    sendCommand({ action: "set_fan_auto", fan });
   }, [sendCommand]);
 
   const handleSetProfile = useCallback((profileId: string) => {
@@ -278,11 +286,15 @@ export function useSimulatedSensors() {
     fan1Speed, setFan1Speed: (v: number) => { setFan1Speed(v); sendFanCommand("fan1", v); },
     fan2Speed, setFan2Speed: (v: number) => { setFan2Speed(v); sendFanCommand("fan2", v); },
     fan3Speed, setFan3Speed: (v: number) => { setFan3Speed(v); sendFanCommand("fan3", v); },
+    sendFanAuto,
+    fanLabels,
     cpuFreq, cpuVoltage, cpuPower,
     tempHistory,
     profile, setProfile: handleSetProfile,
+    availableProfiles,
     connected,
     systemInfo,
     detectedSensors,
+    diskPartitions, diskIoRates,
   };
 }
