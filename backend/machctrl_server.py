@@ -963,14 +963,12 @@ class SensorServer:
                         "silent": "powersave",
                         "balanced": "powersave",
                         "performance": "performance",
-                        "turbo": "performance",
                     }
                 else:
                     gov_map = {
                         "silent": "powersave",
                         "balanced": next((g for g in ("schedutil", "ondemand") if g in self.available_governors), "powersave"),
                         "performance": "performance",
-                        "turbo": "performance",
                     }
 
                 governor = gov_map.get(profile_name, "powersave")
