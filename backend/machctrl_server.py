@@ -843,13 +843,17 @@ class SensorServer:
         # Uptime
         self.system_info["uptime"] = get_system_info()["uptime"]
 
-        # Histórico
+        # Histórico inclui temps por socket/núcleo
         temp_point = {
             "time": now.strftime("%M:%S"),
             "cpu": temperatures.get("cpu", 0),
             "gpu": temperatures.get("gpu", 0),
             "board": temperatures.get("board", 0),
         }
+        for c in cpus_temps_list:
+            temp_point[f"cpu{c['socket']}_pkg"] = c["package"]
+            for core in c["cores"]:
+                temp_point[f"cpu{c['socket']}_c{core['id']}"] = core["temp"]
         self.temp_history.append(temp_point)
 
         # Governador atual
