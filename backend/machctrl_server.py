@@ -1048,6 +1048,17 @@ class SensorServer:
             data = self.read_all_sensors()
             await websocket.send(json.dumps(data))
 
+        elif action == "restart_service":
+            await websocket.send(json.dumps({
+                "type": "command_result",
+                "action": "restart_service",
+                "success": True,
+                "message": "Reiniciando backend...",
+            }))
+            print("🔄 Reinício solicitado pelo cliente. Saindo para que o systemd/supervisor reinicie...")
+            # Encerra com código != 0 para o systemd reiniciar (Restart=always)
+            asyncio.get_event_loop().call_later(0.5, lambda: os._exit(0))
+
     async def broadcast_loop(self):
         while True:
             if self.clients:
