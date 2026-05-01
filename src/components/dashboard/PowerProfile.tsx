@@ -1,10 +1,9 @@
-import { Zap, Leaf, Flame, Settings2 } from "lucide-react";
+import { Zap, Leaf, Settings2 } from "lucide-react";
 
 const profileMeta: Record<string, { label: string; icon: any; description: string }> = {
-  silent: { label: "Silencioso", icon: Leaf, description: "Baixo ruído, desempenho reduzido" },
+  silent: { label: "Silencioso", icon: Leaf, description: "Baixo ruído" },
   balanced: { label: "Equilibrado", icon: Settings2, description: "Equilíbrio ideal" },
-  performance: { label: "Desempenho", icon: Zap, description: "Máximo desempenho" },
-  turbo: { label: "Turbo", icon: Flame, description: "Potência total, fans no máximo" },
+  performance: { label: "Desempenho", icon: Zap, description: "Máximo" },
 };
 
 interface PowerProfileProps {
