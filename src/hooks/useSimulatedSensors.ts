@@ -180,14 +180,17 @@ export function useSimulatedSensors() {
         });
       }
 
-      // Histórico
+      // CPUs por socket (temps e modelos)
+      if (Array.isArray(data.cpus_temps)) {
+        setCpusTemps(data.cpus_temps);
+      }
+      if (data.cpu?.sockets && Array.isArray(data.cpu.sockets)) {
+        setCpuModels(data.cpu.sockets.map((s: any) => s.model || ""));
+      }
+
+      // Histórico - mantém todas as chaves dinâmicas
       if (data.temp_history && data.temp_history.length > 0) {
-        setTempHistory(data.temp_history.map((p: any) => ({
-          time: p.time || "",
-          cpu: p.cpu || 0,
-          gpu: p.gpu || 0,
-          board: p.board || 0,
-        })));
+        setTempHistory(data.temp_history);
       }
     }
 
