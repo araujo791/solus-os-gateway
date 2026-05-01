@@ -54,6 +54,12 @@ interface FanEntry {
 
 const WS_URL = "ws://localhost:8765";
 
+interface CpuTempData {
+  socket: number;
+  package: number;
+  cores: { id: number; temp: number }[];
+}
+
 export function useSimulatedSensors() {
   const [cpuTemp, setCpuTemp] = useState(52);
   const [gpuTemp, setGpuTemp] = useState(45);
@@ -69,20 +75,22 @@ export function useSimulatedSensors() {
   const [cpuFreq, setCpuFreq] = useState(3.8);
   const [cpuVoltage, setCpuVoltage] = useState(1.25);
   const [cpuPower, setCpuPower] = useState(0);
-  const [tempHistory, setTempHistory] = useState(generateTempHistory);
+  const [tempHistory, setTempHistory] = useState<Record<string, number | string>[]>(generateTempHistory);
   const [memTotalGb, setMemTotalGb] = useState(32);
   const [memUsedGb, setMemUsedGb] = useState(13.1);
   const [memTotalSlots, setMemTotalSlots] = useState(0);
   const [memOccupiedSlots, setMemOccupiedSlots] = useState(0);
   const [memSlots, setMemSlots] = useState<MemorySlot[]>([]);
   const [profile, setProfile] = useState("balanced");
-  const [availableProfiles, setAvailableProfiles] = useState<string[]>(["silent", "balanced", "performance", "turbo"]);
+  const [availableProfiles, setAvailableProfiles] = useState<string[]>(["silent", "balanced", "performance"]);
   const [connected, setConnected] = useState(false);
+  const [cpusTemps, setCpusTemps] = useState<CpuTempData[]>([]);
+  const [cpuModels, setCpuModels] = useState<string[]>([]);
   const [systemInfo, setSystemInfo] = useState({
-    board: "Machinist E5 D8 Max",
-    cpu: "Xeon E5-2680 v4",
-    kernel: "6.18.13-330.current",
-    os: "Solus Linux",
+    board: "Detectando...",
+    cpu: "Detectando...",
+    kernel: "",
+    os: "Linux",
     uptime: "0h 00m",
   });
   const [detectedSensors, setDetectedSensors] = useState({ tempCount: 0, fanCount: 0, pwmCount: 0 });
@@ -172,14 +180,17 @@ export function useSimulatedSensors() {
         });
       }
 
-      // Histórico
+      // CPUs por socket (temps e modelos)
+      if (Array.isArray(data.cpus_temps)) {
+        setCpusTemps(data.cpus_temps);
+      }
+      if (data.cpu?.sockets && Array.isArray(data.cpu.sockets)) {
+        setCpuModels(data.cpu.sockets.map((s: any) => s.model || ""));
+      }
+
+      // Histórico - mantém todas as chaves dinâmicas
       if (data.temp_history && data.temp_history.length > 0) {
-        setTempHistory(data.temp_history.map((p: any) => ({
-          time: p.time || "",
-          cpu: p.cpu || 0,
-          gpu: p.gpu || 0,
-          board: p.board || 0,
-        })));
+        setTempHistory(data.temp_history);
       }
     }
 
@@ -240,11 +251,15 @@ export function useSimulatedSensors() {
 
         setTempHistory((prev) => {
           const now = new Date();
+          const last = prev[prev.length - 1] || {};
+          const lastCpu = typeof last.cpu === "number" ? last.cpu : 50;
+          const lastGpu = typeof last.gpu === "number" ? last.gpu : 45;
+          const lastBoard = typeof last.board === "number" ? last.board : 35;
           const newPoint = {
             time: now.toLocaleTimeString("pt-BR", { minute: "2-digit", second: "2-digit" }),
-            cpu: Math.max(30, Math.min(95, (prev[prev.length - 1]?.cpu || 50) + randomBetween(-3, 3))),
-            gpu: Math.max(25, Math.min(90, (prev[prev.length - 1]?.gpu || 45) + randomBetween(-2, 2))),
-            board: Math.max(25, Math.min(55, (prev[prev.length - 1]?.board || 35) + randomBetween(-1, 1))),
+            cpu: Math.max(30, Math.min(95, lastCpu + randomBetween(-3, 3))),
+            gpu: Math.max(25, Math.min(90, lastGpu + randomBetween(-2, 2))),
+            board: Math.max(25, Math.min(55, lastBoard + randomBetween(-1, 1))),
           };
           return [...prev.slice(1), newPoint];
         });
@@ -279,8 +294,13 @@ export function useSimulatedSensors() {
     sendCommand({ action: "set_profile", profile: profileId });
   }, [sendCommand]);
 
+  const restartService = useCallback(() => {
+    sendCommand({ action: "restart_service" });
+  }, [sendCommand]);
+
   return {
     cpuTemp, gpuTemp, boardTemp,
+    cpusTemps, cpuModels,
     cpuUsage, memUsage, memTotalGb, memUsedGb, memTotalSlots, memOccupiedSlots, memSlots,
     fan1Rpm, fan2Rpm, fan3Rpm,
     fan1Speed, setFan1Speed: (v: number) => { setFan1Speed(v); sendFanCommand("fan1", v); },
@@ -296,5 +316,6 @@ export function useSimulatedSensors() {
     systemInfo,
     detectedSensors,
     diskPartitions, diskIoRates,
+    restartService,
   };
 }

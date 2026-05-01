@@ -126,24 +126,78 @@ def read_sensor_file(path):
         return None
 
 
+def get_cpu_topology():
+    """Detecta todos os sockets físicos e seus núcleos via /proc/cpuinfo."""
+    sockets = {}  # physical_id -> {"model": str, "cores": set(), "threads": [logical_ids]}
+    try:
+        with open("/proc/cpuinfo") as f:
+            current = {}
+            for line in f:
+                line = line.strip()
+                if not line:
+                    if current:
+                        pid = current.get("physical id", "0")
+                        sockets.setdefault(pid, {"model": "", "cores": set(), "threads": []})
+                        sockets[pid]["model"] = current.get("model name", sockets[pid]["model"])
+                        if "core id" in current:
+                            sockets[pid]["cores"].add(current["core id"])
+                        if "processor" in current:
+                            try:
+                                sockets[pid]["threads"].append(int(current["processor"]))
+                            except ValueError:
+                                pass
+                    current = {}
+                    continue
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    current[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return sockets
+
+
 def get_cpu_info():
+    """Informações agregadas + por socket."""
+    topology = get_cpu_topology()
+    freqs_per_cpu = []
+    try:
+        per = psutil.cpu_freq(percpu=True)
+        if per:
+            freqs_per_cpu = [round(f.current / 1000, 2) for f in per]
+    except Exception:
+        pass
+    usage_per_cpu = psutil.cpu_percent(interval=None, percpu=True) or []
+
     info = {
         "usage": psutil.cpu_percent(interval=None),
         "freq": 0,
         "cores": psutil.cpu_count(logical=False) or 0,
         "threads": psutil.cpu_count(logical=True) or 0,
+        "model": "Desconhecido",
+        "sockets": [],
     }
     freq = psutil.cpu_freq()
     if freq:
         info["freq"] = round(freq.current / 1000, 2)
-    try:
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if "model name" in line:
-                    info["model"] = line.split(":")[1].strip()
-                    break
-    except FileNotFoundError:
-        info["model"] = "Desconhecido"
+
+    # Constrói lista por socket
+    for pid in sorted(topology.keys(), key=lambda x: int(x) if x.isdigit() else 0):
+        s = topology[pid]
+        threads = sorted(s["threads"])
+        sock_freqs = [freqs_per_cpu[t] for t in threads if t < len(freqs_per_cpu)]
+        sock_usages = [usage_per_cpu[t] for t in threads if t < len(usage_per_cpu)]
+        info["sockets"].append({
+            "id": int(pid) if pid.isdigit() else 0,
+            "model": s["model"] or info["model"],
+            "core_count": len(s["cores"]),
+            "thread_count": len(threads),
+            "threads": threads,
+            "freq": round(sum(sock_freqs) / len(sock_freqs), 2) if sock_freqs else 0,
+            "usage": round(sum(sock_usages) / len(sock_usages), 1) if sock_usages else 0,
+        })
+
+    if info["sockets"]:
+        info["model"] = info["sockets"][0]["model"]
     return info
 
 
@@ -317,15 +371,59 @@ def get_system_info():
     except FileNotFoundError:
         info["os"] = "Linux"
     try:
-        board_vendor = ""
-        board_name = ""
-        if os.path.exists("/sys/class/dmi/id/board_vendor"):
-            with open("/sys/class/dmi/id/board_vendor") as f:
-                board_vendor = f.read().strip()
-        if os.path.exists("/sys/class/dmi/id/board_name"):
-            with open("/sys/class/dmi/id/board_name") as f:
-                board_name = f.read().strip()
-        info["board"] = f"{board_vendor} {board_name}".strip() or "Desconhecida"
+        def _read(p):
+            try:
+                with open(p) as f:
+                    return f.read().strip()
+            except (FileNotFoundError, PermissionError):
+                return ""
+
+        board_vendor = _read("/sys/class/dmi/id/board_vendor")
+        board_name = _read("/sys/class/dmi/id/board_name")
+        board_version = _read("/sys/class/dmi/id/board_version")
+        product_name = _read("/sys/class/dmi/id/product_name")
+        sys_vendor = _read("/sys/class/dmi/id/sys_vendor")
+
+        # Filtra strings genéricas
+        def _clean(s):
+            if not s:
+                return ""
+            generic = ("default string", "to be filled by o.e.m.", "system manufacturer",
+                       "system product name", "not specified", "none", "n/a", "oem", "unknown")
+            return "" if s.lower().strip() in generic else s.strip()
+
+        board_vendor = _clean(board_vendor)
+        board_name = _clean(board_name)
+        product_name = _clean(product_name)
+        sys_vendor = _clean(sys_vendor)
+        board_version = _clean(board_version)
+
+        # Monta melhor identificação possível
+        parts = []
+        vendor = board_vendor or sys_vendor
+        name = board_name or product_name
+        if vendor:
+            parts.append(vendor)
+        if name:
+            parts.append(name)
+        if board_version and board_version not in (name, vendor):
+            parts.append(f"({board_version})")
+
+        # Fallback dmidecode
+        if not parts:
+            try:
+                r = subprocess.run(["dmidecode", "-s", "baseboard-product-name"],
+                                   capture_output=True, text=True, timeout=3)
+                n = _clean(r.stdout.strip())
+                r2 = subprocess.run(["dmidecode", "-s", "baseboard-manufacturer"],
+                                    capture_output=True, text=True, timeout=3)
+                v = _clean(r2.stdout.strip())
+                if v: parts.append(v)
+                if n: parts.append(n)
+            except Exception:
+                pass
+
+        info["board"] = " ".join(parts) if parts else "Desconhecida"
     except PermissionError:
         info["board"] = "Desconhecida (precisa de root)"
     try:
@@ -431,8 +529,8 @@ def get_available_profiles():
 
     profiles = []
     if has_pstate:
-        # intel_pstate sempre suporta todos os perfis via min/max_perf_pct
-        profiles = ["silent", "balanced", "performance", "turbo"]
+        # intel_pstate suporta os 3 perfis via min/max_perf_pct
+        profiles = ["silent", "balanced", "performance"]
     else:
         if "powersave" in available_governors:
             profiles.append("silent")
@@ -440,7 +538,6 @@ def get_available_profiles():
             profiles.append("balanced")
         if "performance" in available_governors:
             profiles.append("performance")
-            profiles.append("turbo")
 
     # Fallback: se nada detectado, mostra balanced
     if not profiles:
@@ -479,8 +576,6 @@ def get_current_profile(available_governors, has_pstate):
             return "silent"
         elif current_governor == "powersave":
             return "balanced"
-        elif current_governor == "performance" and no_turbo == 0 and max_perf == 100:
-            return "turbo"
         elif current_governor == "performance":
             return "performance"
         return "balanced"
@@ -526,29 +621,42 @@ class SensorServer:
         self.detect_hardware()
 
     def _classify_temp_sensors(self):
+        # Mapeia chips coretemp-isa-XXXX para socket index sequencial
+        coretemp_chips = sorted({lbl.split("/")[0] for lbl in self.temp_sensors if "coretemp" in lbl.split("/")[0].lower()})
+        chip_to_socket = {chip: idx for idx, chip in enumerate(coretemp_chips)}
+
         for label in self.temp_sensors:
             lower = label.lower()
             chip = label.split("/")[0] if "/" in label else ""
             sensor_name = label.split("/")[1] if "/" in label else label
 
-            if "coretemp" in chip:
+            if "coretemp" in chip.lower():
+                socket_idx = chip_to_socket.get(chip, 0)
                 if "package" in lower:
-                    self.temp_label_map[label] = "cpu"
+                    self.temp_label_map[label] = f"cpu{socket_idx}_package"
                 else:
-                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
-            elif "amdgpu" in chip:
+                    # ex: "Core 0", "Core 14"
+                    core_match = re.search(r"core\s*(\d+)", lower)
+                    if core_match:
+                        self.temp_label_map[label] = f"cpu{socket_idx}_core_{core_match.group(1)}"
+                    else:
+                        self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
+            elif "k10temp" in chip.lower() or "zenpower" in chip.lower():
+                # AMD: tdie/tctl
+                socket_idx = chip_to_socket.get(chip, 0)
+                if "tctl" in lower or "tdie" in lower or "tccd" not in lower:
+                    self.temp_label_map[label] = f"cpu{socket_idx}_package"
+                else:
+                    self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
+            elif "amdgpu" in chip.lower() or "radeon" in chip.lower() or "nouveau" in chip.lower():
                 self.temp_label_map[label] = "gpu"
-            elif "nvme" in chip:
+            elif "nvme" in chip.lower():
                 self.temp_label_map[label] = f"nvme_{chip}"
-            elif "nct" in chip or "it87" in chip or "w83" in chip:
-                if "systin" in lower:
+            elif "nct" in chip.lower() or "it87" in chip.lower() or "w83" in chip.lower():
+                if "systin" in lower or "system" in lower:
                     self.temp_label_map[label] = "board"
                 elif "cputin" in lower:
                     self.temp_label_map[label] = "cpu_board"
-                elif "auxtin" in lower:
-                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
-                elif "peci" in lower:
-                    self.temp_label_map[label] = "peci"
                 else:
                     self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
             else:
@@ -629,13 +737,41 @@ class SensorServer:
 
         # Temperaturas
         temperatures = {}
+        cpus_temps = {}  # socket_idx -> {"package": float, "cores": {core_idx: float}}
         for label, path in self.temp_sensors.items():
             value = read_sensor_file(path)
-            if value is not None:
-                category = self.temp_label_map.get(label, label)
-                temp_c = round(value / 1000, 1)
-                if -40 < temp_c < 150:
-                    temperatures[category] = temp_c
+            if value is None:
+                continue
+            category = self.temp_label_map.get(label, label)
+            temp_c = round(value / 1000, 1)
+            if not (-40 < temp_c < 150):
+                continue
+            temperatures[category] = temp_c
+
+            # Extrai cpuN_package / cpuN_core_M
+            m = re.match(r"cpu(\d+)_(package|core_(\d+))", category)
+            if m:
+                sock = int(m.group(1))
+                cpus_temps.setdefault(sock, {"package": 0, "cores": {}})
+                if m.group(2) == "package":
+                    cpus_temps[sock]["package"] = temp_c
+                else:
+                    cpus_temps[sock]["cores"][int(m.group(3))] = temp_c
+
+        # Lista ordenada por socket
+        cpus_temps_list = []
+        for sock in sorted(cpus_temps.keys()):
+            entry = cpus_temps[sock]
+            cores_sorted = [{"id": cid, "temp": entry["cores"][cid]} for cid in sorted(entry["cores"].keys())]
+            cpus_temps_list.append({
+                "socket": sock,
+                "package": entry["package"],
+                "cores": cores_sorted,
+            })
+
+        # Compatibilidade: cpu/gpu/board agregados
+        if cpus_temps_list and "cpu" not in temperatures:
+            temperatures["cpu"] = cpus_temps_list[0]["package"]
 
         # Fans - enviar com índice sequencial para o frontend
         fans = {}
@@ -704,13 +840,17 @@ class SensorServer:
         # Uptime
         self.system_info["uptime"] = get_system_info()["uptime"]
 
-        # Histórico
+        # Histórico inclui temps por socket/núcleo
         temp_point = {
             "time": now.strftime("%M:%S"),
             "cpu": temperatures.get("cpu", 0),
             "gpu": temperatures.get("gpu", 0),
             "board": temperatures.get("board", 0),
         }
+        for c in cpus_temps_list:
+            temp_point[f"cpu{c['socket']}_pkg"] = c["package"]
+            for core in c["cores"]:
+                temp_point[f"cpu{c['socket']}_c{core['id']}"] = core["temp"]
         self.temp_history.append(temp_point)
 
         # Governador atual
@@ -727,6 +867,7 @@ class SensorServer:
             "type": "sensor_data",
             "timestamp": now.isoformat(),
             "temperatures": temperatures,
+            "cpus_temps": cpus_temps_list,
             "fans": fan_list,
             "cpu": cpu_info,
             "cpu_power": self.current_power,
@@ -822,14 +963,12 @@ class SensorServer:
                         "silent": "powersave",
                         "balanced": "powersave",
                         "performance": "performance",
-                        "turbo": "performance",
                     }
                 else:
                     gov_map = {
                         "silent": "powersave",
                         "balanced": next((g for g in ("schedutil", "ondemand") if g in self.available_governors), "powersave"),
                         "performance": "performance",
-                        "turbo": "performance",
                     }
 
                 governor = gov_map.get(profile_name, "powersave")
@@ -851,7 +990,6 @@ class SensorServer:
                         "silent":      {"no_turbo": "1", "min_perf": "15", "max_perf": "50"},
                         "balanced":    {"no_turbo": "0", "min_perf": "20", "max_perf": "80"},
                         "performance": {"no_turbo": "0", "min_perf": "30", "max_perf": "100"},
-                        "turbo":       {"no_turbo": "0", "min_perf": "50", "max_perf": "100"},
                     }
                     settings = perf_settings.get(profile_name, perf_settings["balanced"])
                     for path, val in [
@@ -909,6 +1047,17 @@ class SensorServer:
         elif action == "get_sensors":
             data = self.read_all_sensors()
             await websocket.send(json.dumps(data))
+
+        elif action == "restart_service":
+            await websocket.send(json.dumps({
+                "type": "command_result",
+                "action": "restart_service",
+                "success": True,
+                "message": "Reiniciando backend...",
+            }))
+            print("🔄 Reinício solicitado pelo cliente. Saindo para que o systemd/supervisor reinicie...")
+            # Encerra com código != 0 para o systemd reiniciar (Restart=always)
+            asyncio.get_event_loop().call_later(0.5, lambda: os._exit(0))
 
     async def broadcast_loop(self):
         while True:
