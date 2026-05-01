@@ -870,6 +870,7 @@ class SensorServer:
             "type": "sensor_data",
             "timestamp": now.isoformat(),
             "temperatures": temperatures,
+            "cpus_temps": cpus_temps_list,
             "fans": fan_list,
             "cpu": cpu_info,
             "cpu_power": self.current_power,
