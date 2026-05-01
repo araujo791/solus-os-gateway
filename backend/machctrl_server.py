@@ -624,29 +624,42 @@ class SensorServer:
         self.detect_hardware()
 
     def _classify_temp_sensors(self):
+        # Mapeia chips coretemp-isa-XXXX para socket index sequencial
+        coretemp_chips = sorted({lbl.split("/")[0] for lbl in self.temp_sensors if "coretemp" in lbl.split("/")[0].lower()})
+        chip_to_socket = {chip: idx for idx, chip in enumerate(coretemp_chips)}
+
         for label in self.temp_sensors:
             lower = label.lower()
             chip = label.split("/")[0] if "/" in label else ""
             sensor_name = label.split("/")[1] if "/" in label else label
 
-            if "coretemp" in chip:
+            if "coretemp" in chip.lower():
+                socket_idx = chip_to_socket.get(chip, 0)
                 if "package" in lower:
-                    self.temp_label_map[label] = "cpu"
+                    self.temp_label_map[label] = f"cpu{socket_idx}_package"
                 else:
-                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
-            elif "amdgpu" in chip:
+                    # ex: "Core 0", "Core 14"
+                    core_match = re.search(r"core\s*(\d+)", lower)
+                    if core_match:
+                        self.temp_label_map[label] = f"cpu{socket_idx}_core_{core_match.group(1)}"
+                    else:
+                        self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
+            elif "k10temp" in chip.lower() or "zenpower" in chip.lower():
+                # AMD: tdie/tctl
+                socket_idx = chip_to_socket.get(chip, 0)
+                if "tctl" in lower or "tdie" in lower or "tccd" not in lower:
+                    self.temp_label_map[label] = f"cpu{socket_idx}_package"
+                else:
+                    self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
+            elif "amdgpu" in chip.lower() or "radeon" in chip.lower() or "nouveau" in chip.lower():
                 self.temp_label_map[label] = "gpu"
-            elif "nvme" in chip:
+            elif "nvme" in chip.lower():
                 self.temp_label_map[label] = f"nvme_{chip}"
-            elif "nct" in chip or "it87" in chip or "w83" in chip:
-                if "systin" in lower:
+            elif "nct" in chip.lower() or "it87" in chip.lower() or "w83" in chip.lower():
+                if "systin" in lower or "system" in lower:
                     self.temp_label_map[label] = "board"
                 elif "cputin" in lower:
                     self.temp_label_map[label] = "cpu_board"
-                elif "auxtin" in lower:
-                    self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
-                elif "peci" in lower:
-                    self.temp_label_map[label] = "peci"
                 else:
                     self.temp_label_map[label] = sensor_name.lower().replace(" ", "_")
             else:
