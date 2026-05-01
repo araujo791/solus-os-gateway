@@ -740,13 +740,41 @@ class SensorServer:
 
         # Temperaturas
         temperatures = {}
+        cpus_temps = {}  # socket_idx -> {"package": float, "cores": {core_idx: float}}
         for label, path in self.temp_sensors.items():
             value = read_sensor_file(path)
-            if value is not None:
-                category = self.temp_label_map.get(label, label)
-                temp_c = round(value / 1000, 1)
-                if -40 < temp_c < 150:
-                    temperatures[category] = temp_c
+            if value is None:
+                continue
+            category = self.temp_label_map.get(label, label)
+            temp_c = round(value / 1000, 1)
+            if not (-40 < temp_c < 150):
+                continue
+            temperatures[category] = temp_c
+
+            # Extrai cpuN_package / cpuN_core_M
+            m = re.match(r"cpu(\d+)_(package|core_(\d+))", category)
+            if m:
+                sock = int(m.group(1))
+                cpus_temps.setdefault(sock, {"package": 0, "cores": {}})
+                if m.group(2) == "package":
+                    cpus_temps[sock]["package"] = temp_c
+                else:
+                    cpus_temps[sock]["cores"][int(m.group(3))] = temp_c
+
+        # Lista ordenada por socket
+        cpus_temps_list = []
+        for sock in sorted(cpus_temps.keys()):
+            entry = cpus_temps[sock]
+            cores_sorted = [{"id": cid, "temp": entry["cores"][cid]} for cid in sorted(entry["cores"].keys())]
+            cpus_temps_list.append({
+                "socket": sock,
+                "package": entry["package"],
+                "cores": cores_sorted,
+            })
+
+        # Compatibilidade: cpu/gpu/board agregados
+        if cpus_temps_list and "cpu" not in temperatures:
+            temperatures["cpu"] = cpus_temps_list[0]["package"]
 
         # Fans - enviar com índice sequencial para o frontend
         fans = {}
