@@ -126,24 +126,78 @@ def read_sensor_file(path):
         return None
 
 
+def get_cpu_topology():
+    """Detecta todos os sockets físicos e seus núcleos via /proc/cpuinfo."""
+    sockets = {}  # physical_id -> {"model": str, "cores": set(), "threads": [logical_ids]}
+    try:
+        with open("/proc/cpuinfo") as f:
+            current = {}
+            for line in f:
+                line = line.strip()
+                if not line:
+                    if current:
+                        pid = current.get("physical id", "0")
+                        sockets.setdefault(pid, {"model": "", "cores": set(), "threads": []})
+                        sockets[pid]["model"] = current.get("model name", sockets[pid]["model"])
+                        if "core id" in current:
+                            sockets[pid]["cores"].add(current["core id"])
+                        if "processor" in current:
+                            try:
+                                sockets[pid]["threads"].append(int(current["processor"]))
+                            except ValueError:
+                                pass
+                    current = {}
+                    continue
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    current[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return sockets
+
+
 def get_cpu_info():
+    """Informações agregadas + por socket."""
+    topology = get_cpu_topology()
+    freqs_per_cpu = []
+    try:
+        per = psutil.cpu_freq(percpu=True)
+        if per:
+            freqs_per_cpu = [round(f.current / 1000, 2) for f in per]
+    except Exception:
+        pass
+    usage_per_cpu = psutil.cpu_percent(interval=None, percpu=True) or []
+
     info = {
         "usage": psutil.cpu_percent(interval=None),
         "freq": 0,
         "cores": psutil.cpu_count(logical=False) or 0,
         "threads": psutil.cpu_count(logical=True) or 0,
+        "model": "Desconhecido",
+        "sockets": [],
     }
     freq = psutil.cpu_freq()
     if freq:
         info["freq"] = round(freq.current / 1000, 2)
-    try:
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if "model name" in line:
-                    info["model"] = line.split(":")[1].strip()
-                    break
-    except FileNotFoundError:
-        info["model"] = "Desconhecido"
+
+    # Constrói lista por socket
+    for pid in sorted(topology.keys(), key=lambda x: int(x) if x.isdigit() else 0):
+        s = topology[pid]
+        threads = sorted(s["threads"])
+        sock_freqs = [freqs_per_cpu[t] for t in threads if t < len(freqs_per_cpu)]
+        sock_usages = [usage_per_cpu[t] for t in threads if t < len(usage_per_cpu)]
+        info["sockets"].append({
+            "id": int(pid) if pid.isdigit() else 0,
+            "model": s["model"] or info["model"],
+            "core_count": len(s["cores"]),
+            "thread_count": len(threads),
+            "threads": threads,
+            "freq": round(sum(sock_freqs) / len(sock_freqs), 2) if sock_freqs else 0,
+            "usage": round(sum(sock_usages) / len(sock_usages), 1) if sock_usages else 0,
+        })
+
+    if info["sockets"]:
+        info["model"] = info["sockets"][0]["model"]
     return info
 
 
