@@ -371,15 +371,59 @@ def get_system_info():
     except FileNotFoundError:
         info["os"] = "Linux"
     try:
-        board_vendor = ""
-        board_name = ""
-        if os.path.exists("/sys/class/dmi/id/board_vendor"):
-            with open("/sys/class/dmi/id/board_vendor") as f:
-                board_vendor = f.read().strip()
-        if os.path.exists("/sys/class/dmi/id/board_name"):
-            with open("/sys/class/dmi/id/board_name") as f:
-                board_name = f.read().strip()
-        info["board"] = f"{board_vendor} {board_name}".strip() or "Desconhecida"
+        def _read(p):
+            try:
+                with open(p) as f:
+                    return f.read().strip()
+            except (FileNotFoundError, PermissionError):
+                return ""
+
+        board_vendor = _read("/sys/class/dmi/id/board_vendor")
+        board_name = _read("/sys/class/dmi/id/board_name")
+        board_version = _read("/sys/class/dmi/id/board_version")
+        product_name = _read("/sys/class/dmi/id/product_name")
+        sys_vendor = _read("/sys/class/dmi/id/sys_vendor")
+
+        # Filtra strings genéricas
+        def _clean(s):
+            if not s:
+                return ""
+            generic = ("default string", "to be filled by o.e.m.", "system manufacturer",
+                       "system product name", "not specified", "none", "n/a", "oem", "unknown")
+            return "" if s.lower().strip() in generic else s.strip()
+
+        board_vendor = _clean(board_vendor)
+        board_name = _clean(board_name)
+        product_name = _clean(product_name)
+        sys_vendor = _clean(sys_vendor)
+        board_version = _clean(board_version)
+
+        # Monta melhor identificação possível
+        parts = []
+        vendor = board_vendor or sys_vendor
+        name = board_name or product_name
+        if vendor:
+            parts.append(vendor)
+        if name:
+            parts.append(name)
+        if board_version and board_version not in (name, vendor):
+            parts.append(f"({board_version})")
+
+        # Fallback dmidecode
+        if not parts:
+            try:
+                r = subprocess.run(["dmidecode", "-s", "baseboard-product-name"],
+                                   capture_output=True, text=True, timeout=3)
+                n = _clean(r.stdout.strip())
+                r2 = subprocess.run(["dmidecode", "-s", "baseboard-manufacturer"],
+                                    capture_output=True, text=True, timeout=3)
+                v = _clean(r2.stdout.strip())
+                if v: parts.append(v)
+                if n: parts.append(n)
+            except Exception:
+                pass
+
+        info["board"] = " ".join(parts) if parts else "Desconhecida"
     except PermissionError:
         info["board"] = "Desconhecida (precisa de root)"
     try:
