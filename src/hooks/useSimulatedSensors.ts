@@ -294,8 +294,13 @@ export function useSimulatedSensors() {
     sendCommand({ action: "set_profile", profile: profileId });
   }, [sendCommand]);
 
+  const restartService = useCallback(() => {
+    sendCommand({ action: "restart_service" });
+  }, [sendCommand]);
+
   return {
     cpuTemp, gpuTemp, boardTemp,
+    cpusTemps, cpuModels,
     cpuUsage, memUsage, memTotalGb, memUsedGb, memTotalSlots, memOccupiedSlots, memSlots,
     fan1Rpm, fan2Rpm, fan3Rpm,
     fan1Speed, setFan1Speed: (v: number) => { setFan1Speed(v); sendFanCommand("fan1", v); },
@@ -311,5 +316,6 @@ export function useSimulatedSensors() {
     systemInfo,
     detectedSensors,
     diskPartitions, diskIoRates,
+    restartService,
   };
 }
