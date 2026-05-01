@@ -22,7 +22,7 @@ export function PowerProfile({ active, available, onChange }: PowerProfileProps)
       <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         Perfil de Energia
       </h3>
-      <div className={`grid gap-2 ${profiles.length <= 2 ? "grid-cols-2" : "grid-cols-2"}`}>
+      <div className="grid gap-2 grid-cols-3">
         {profiles.map((profile) => {
           const isActive = active === profile.id;
           const Icon = profile.icon;
