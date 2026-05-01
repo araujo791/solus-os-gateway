@@ -251,11 +251,15 @@ export function useSimulatedSensors() {
 
         setTempHistory((prev) => {
           const now = new Date();
+          const last = prev[prev.length - 1] || {};
+          const lastCpu = typeof last.cpu === "number" ? last.cpu : 50;
+          const lastGpu = typeof last.gpu === "number" ? last.gpu : 45;
+          const lastBoard = typeof last.board === "number" ? last.board : 35;
           const newPoint = {
             time: now.toLocaleTimeString("pt-BR", { minute: "2-digit", second: "2-digit" }),
-            cpu: Math.max(30, Math.min(95, (prev[prev.length - 1]?.cpu || 50) + randomBetween(-3, 3))),
-            gpu: Math.max(25, Math.min(90, (prev[prev.length - 1]?.gpu || 45) + randomBetween(-2, 2))),
-            board: Math.max(25, Math.min(55, (prev[prev.length - 1]?.board || 35) + randomBetween(-1, 1))),
+            cpu: Math.max(30, Math.min(95, lastCpu + randomBetween(-3, 3))),
+            gpu: Math.max(25, Math.min(90, lastGpu + randomBetween(-2, 2))),
+            board: Math.max(25, Math.min(55, lastBoard + randomBetween(-1, 1))),
           };
           return [...prev.slice(1), newPoint];
         });
