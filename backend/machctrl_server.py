@@ -990,7 +990,6 @@ class SensorServer:
                         "silent":      {"no_turbo": "1", "min_perf": "15", "max_perf": "50"},
                         "balanced":    {"no_turbo": "0", "min_perf": "20", "max_perf": "80"},
                         "performance": {"no_turbo": "0", "min_perf": "30", "max_perf": "100"},
-                        "turbo":       {"no_turbo": "0", "min_perf": "50", "max_perf": "100"},
                     }
                     settings = perf_settings.get(profile_name, perf_settings["balanced"])
                     for path, val in [
