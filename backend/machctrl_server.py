@@ -576,8 +576,6 @@ def get_current_profile(available_governors, has_pstate):
             return "silent"
         elif current_governor == "powersave":
             return "balanced"
-        elif current_governor == "performance" and no_turbo == 0 and max_perf == 100:
-            return "turbo"
         elif current_governor == "performance":
             return "performance"
         return "balanced"
