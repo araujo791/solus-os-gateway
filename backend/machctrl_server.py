@@ -529,8 +529,8 @@ def get_available_profiles():
 
     profiles = []
     if has_pstate:
-        # intel_pstate sempre suporta todos os perfis via min/max_perf_pct
-        profiles = ["silent", "balanced", "performance", "turbo"]
+        # intel_pstate suporta os 3 perfis via min/max_perf_pct
+        profiles = ["silent", "balanced", "performance"]
     else:
         if "powersave" in available_governors:
             profiles.append("silent")
@@ -538,7 +538,6 @@ def get_available_profiles():
             profiles.append("balanced")
         if "performance" in available_governors:
             profiles.append("performance")
-            profiles.append("turbo")
 
     # Fallback: se nada detectado, mostra balanced
     if not profiles:
