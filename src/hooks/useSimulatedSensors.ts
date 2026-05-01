@@ -54,6 +54,12 @@ interface FanEntry {
 
 const WS_URL = "ws://localhost:8765";
 
+interface CpuTempData {
+  socket: number;
+  package: number;
+  cores: { id: number; temp: number }[];
+}
+
 export function useSimulatedSensors() {
   const [cpuTemp, setCpuTemp] = useState(52);
   const [gpuTemp, setGpuTemp] = useState(45);
@@ -69,20 +75,22 @@ export function useSimulatedSensors() {
   const [cpuFreq, setCpuFreq] = useState(3.8);
   const [cpuVoltage, setCpuVoltage] = useState(1.25);
   const [cpuPower, setCpuPower] = useState(0);
-  const [tempHistory, setTempHistory] = useState(generateTempHistory);
+  const [tempHistory, setTempHistory] = useState<Record<string, number | string>[]>(generateTempHistory);
   const [memTotalGb, setMemTotalGb] = useState(32);
   const [memUsedGb, setMemUsedGb] = useState(13.1);
   const [memTotalSlots, setMemTotalSlots] = useState(0);
   const [memOccupiedSlots, setMemOccupiedSlots] = useState(0);
   const [memSlots, setMemSlots] = useState<MemorySlot[]>([]);
   const [profile, setProfile] = useState("balanced");
-  const [availableProfiles, setAvailableProfiles] = useState<string[]>(["silent", "balanced", "performance", "turbo"]);
+  const [availableProfiles, setAvailableProfiles] = useState<string[]>(["silent", "balanced", "performance"]);
   const [connected, setConnected] = useState(false);
+  const [cpusTemps, setCpusTemps] = useState<CpuTempData[]>([]);
+  const [cpuModels, setCpuModels] = useState<string[]>([]);
   const [systemInfo, setSystemInfo] = useState({
-    board: "Machinist E5 D8 Max",
-    cpu: "Xeon E5-2680 v4",
-    kernel: "6.18.13-330.current",
-    os: "Solus Linux",
+    board: "Detectando...",
+    cpu: "Detectando...",
+    kernel: "",
+    os: "Linux",
     uptime: "0h 00m",
   });
   const [detectedSensors, setDetectedSensors] = useState({ tempCount: 0, fanCount: 0, pwmCount: 0 });
