@@ -57,7 +57,7 @@ const WS_URL = "ws://localhost:8765";
 interface CpuTempData {
   socket: number;
   package: number;
-  cores: { id: number; temp: number }[];
+  cores: { id: number; temp: number; usage?: number }[];
 }
 
 export function useSimulatedSensors() {

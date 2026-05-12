@@ -186,12 +186,17 @@ def get_cpu_info():
         threads = sorted(s["threads"])
         sock_freqs = [freqs_per_cpu[t] for t in threads if t < len(freqs_per_cpu)]
         sock_usages = [usage_per_cpu[t] for t in threads if t < len(usage_per_cpu)]
+        # Per-thread usage indexed by logical CPU id (for core circles)
+        thread_usages = {t: usage_per_cpu[t] for t in threads if t < len(usage_per_cpu)}
+        thread_freqs = {t: freqs_per_cpu[t] for t in threads if t < len(freqs_per_cpu)}
         info["sockets"].append({
             "id": int(pid) if pid.isdigit() else 0,
             "model": s["model"] or info["model"],
             "core_count": len(s["cores"]),
             "thread_count": len(threads),
             "threads": threads,
+            "thread_usages": thread_usages,
+            "thread_freqs": thread_freqs,
             "freq": round(sum(sock_freqs) / len(sock_freqs), 2) if sock_freqs else 0,
             "usage": round(sum(sock_usages) / len(sock_usages), 1) if sock_usages else 0,
         })
@@ -348,6 +353,76 @@ def get_memory_info():
                 info["slots"].append(slot)
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
         print(f"⚠️  dmidecode não disponível ou sem permissão: {e}")
+
+    # Fallback: se dmidecode falhou ou não retornou slots, tenta /sys/bus/memory/devices/
+    if info["total_slots"] == 0:
+        try:
+            mem_sys = "/sys/bus/memory/devices"
+            if os.path.exists(mem_sys):
+                # Cada entrada é uma "section" de memória física (geralmente 128MB ou mais)
+                # Agrupa por bloco contíguo/banco para estimar slots
+                sections = sorted(os.listdir(mem_sys))
+                online_sections = []
+                for sec in sections:
+                    state_path = os.path.join(mem_sys, sec, "state")
+                    if os.path.exists(state_path):
+                        try:
+                            with open(state_path) as f:
+                                state = f.read().strip()
+                            if state == "online":
+                                online_sections.append(sec)
+                        except Exception:
+                            pass
+                if online_sections:
+                    # Tenta ler block_size_bytes para calcular total
+                    block_size = 0
+                    block_size_path = "/sys/devices/system/memory/block_size_bytes"
+                    if os.path.exists(block_size_path):
+                        try:
+                            with open(block_size_path) as f:
+                                block_size = int(f.read().strip(), 16)
+                        except Exception:
+                            pass
+                    total_from_sys = block_size * len(online_sections) if block_size else 0
+                    # Usa lshw para pegar info dos bancos de memória se disponível
+                    try:
+                        lshw = subprocess.run(
+                            ["lshw", "-class", "memory", "-short"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if lshw.returncode == 0:
+                            bank_lines = [l for l in lshw.stdout.splitlines() if "bank" in l.lower() or "dimm" in l.lower()]
+                            for bl in bank_lines:
+                                parts = bl.split()
+                                size_gb = 0
+                                mem_type = "?"
+                                for p in parts:
+                                    if re.match(r"^\d+GiB$", p, re.IGNORECASE):
+                                        size_gb = int(p[:-3])
+                                    elif re.match(r"^\d+MiB$", p, re.IGNORECASE):
+                                        size_gb = round(int(p[:-3]) / 1024, 1)
+                                    elif p in ("DDR4", "DDR5", "DDR3", "LPDDR4", "LPDDR5"):
+                                        mem_type = p
+                                if size_gb > 0:
+                                    info["total_slots"] += 1
+                                    info["occupied_slots"] += 1
+                                    info["slots"].append({
+                                        "locator": f"DIMM {info['total_slots']}",
+                                        "bank": "",
+                                        "size_gb": size_gb,
+                                        "type": mem_type,
+                                        "speed_mhz": 0,
+                                        "configured_speed_mhz": 0,
+                                        "voltage": 0,
+                                        "manufacturer": "?",
+                                        "part_number": "?",
+                                        "serial": "",
+                                        "rank": 0,
+                                    })
+                    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
+                        pass
+        except Exception as e:
+            print(f"⚠️  Fallback /sys/bus/memory: {e}")
 
     return info
 
@@ -758,11 +833,43 @@ class SensorServer:
                 else:
                     cpus_temps[sock]["cores"][int(m.group(3))] = temp_c
 
+        # CPU info (with per-thread usages) for merging into cores
+        cpu_info_pre = get_cpu_info()
+        # Build lookup: socket_id -> thread_usages dict
+        sock_thread_usages = {}
+        sock_thread_freqs = {}
+        for s in cpu_info_pre.get("sockets", []):
+            sock_thread_usages[s["id"]] = s.get("thread_usages", {})
+            sock_thread_freqs[s["id"]] = s.get("thread_freqs", {})
+
         # Lista ordenada por socket
         cpus_temps_list = []
         for sock in sorted(cpus_temps.keys()):
             entry = cpus_temps[sock]
-            cores_sorted = [{"id": cid, "temp": entry["cores"][cid]} for cid in sorted(entry["cores"].keys())]
+            thread_usages_map = sock_thread_usages.get(sock, {})
+            thread_freqs_map = sock_thread_freqs.get(sock, {})
+            # Map core_id -> average usage of its threads
+            # We approximate: core N has threads [N*2, N*2+1] for HT, or just thread N for non-HT
+            core_usage_map = {}
+            if thread_usages_map:
+                thread_ids = sorted(thread_usages_map.keys())
+                core_ids = sorted(entry["cores"].keys())
+                # Assign threads to cores in order
+                threads_per_core = max(1, len(thread_ids) // max(1, len(core_ids)))
+                for ci, cid in enumerate(core_ids):
+                    start = ci * threads_per_core
+                    end = start + threads_per_core
+                    relevant = [thread_usages_map[t] for t in thread_ids[start:end] if t in thread_usages_map]
+                    core_usage_map[cid] = round(sum(relevant) / len(relevant), 1) if relevant else 0
+
+            cores_sorted = [
+                {
+                    "id": cid,
+                    "temp": entry["cores"][cid],
+                    "usage": core_usage_map.get(cid, 0),
+                }
+                for cid in sorted(entry["cores"].keys())
+            ]
             cpus_temps_list.append({
                 "socket": sock,
                 "package": entry["package"],
@@ -791,7 +898,7 @@ class SensorServer:
             })
 
         # CPU
-        cpu_info = get_cpu_info()
+        cpu_info = cpu_info_pre  # já calculado acima com per-thread usages
 
         # CPU Power via RAPL
         if self.rapl_path:
