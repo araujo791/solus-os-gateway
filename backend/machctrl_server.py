@@ -354,6 +354,74 @@ def get_memory_info():
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
         print(f"⚠️  dmidecode não disponível ou sem permissão: {e}")
 
+    # Se dmidecode encontrou slots mas nenhum ocupado (sem root / BIOS quirk),
+    # tenta sudo dmidecode (se disponível sem senha via sudoers)
+    if info["total_slots"] > 0 and info["occupied_slots"] == 0:
+        try:
+            result2 = subprocess.run(
+                ["sudo", "-n", "dmidecode", "-t", "17"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result2.returncode == 0:
+                output2 = result2.stdout
+                blocks2 = re.split(r"^Memory Device$", output2, flags=re.MULTILINE)
+                new_slots = []
+                new_total = 0
+                new_occupied = 0
+                for block in blocks2[1:]:
+                    if "Size:" not in block:
+                        continue
+                    new_total += 1
+                    size_line = re.search(r"Size:\s+(.+)", block)
+                    if not size_line:
+                        continue
+                    size_text = size_line.group(1).strip()
+                    if "No Module" in size_text or "Not Installed" in size_text or size_text == "0":
+                        continue
+                    size_match = re.match(r"(\d+)\s*(kB|MB|GB|TB)", size_text)
+                    if not size_match:
+                        continue
+                    new_occupied += 1
+                    size_val = int(size_match.group(1))
+                    size_unit = size_match.group(2)
+                    if size_unit == "kB":
+                        size_gb = round(size_val / (1024 * 1024), 2)
+                    elif size_unit == "MB":
+                        size_gb = round(size_val / 1024, 1)
+                    elif size_unit == "TB":
+                        size_gb = size_val * 1024
+                    else:
+                        size_gb = size_val
+                    speed_match2 = re.search(r"^\s*Speed:\s+(\d+)\s*(MHz|MT/s)", block, re.MULTILINE)
+                    conf_speed_match2 = re.search(r"Configured (?:Memory |Clock )?Speed:\s+(\d+)\s*(MHz|MT/s)", block)
+                    voltage_match2 = re.search(r"Configured Voltage:\s+([\d.]+)\s*V", block)
+                    type_match2 = re.search(r"^\s*Type:\s+(\S+)", block, re.MULTILINE)
+                    locator_match2 = re.search(r"^\s*Locator:\s+(.+)", block, re.MULTILINE)
+                    bank_match2 = re.search(r"Bank Locator:\s+(.+)", block)
+                    manufacturer_match2 = re.search(r"Manufacturer:\s+(.+)", block)
+                    part_match2 = re.search(r"Part Number:\s+(.+)", block)
+                    locator2 = locator_match2.group(1).strip() if locator_match2 else "?"
+                    bank2 = bank_match2.group(1).strip() if bank_match2 else ""
+                    mfr2 = manufacturer_match2.group(1).strip() if manufacturer_match2 else "?"
+                    if mfr2 in ("Unknown", "Not Specified", "Undefined", ""):
+                        mfr2 = "?"
+                    new_slots.append({
+                        "locator": locator2, "bank": bank2, "size_gb": size_gb,
+                        "type": type_match2.group(1).strip() if type_match2 else "?",
+                        "speed_mhz": int(speed_match2.group(1)) if speed_match2 else 0,
+                        "configured_speed_mhz": int(conf_speed_match2.group(1)) if conf_speed_match2 else 0,
+                        "voltage": float(voltage_match2.group(1)) if voltage_match2 else 0,
+                        "manufacturer": mfr2,
+                        "part_number": part_match2.group(1).strip() if part_match2 else "?",
+                        "serial": "", "rank": 0,
+                    })
+                if new_occupied > 0:
+                    info["slots"] = new_slots
+                    info["total_slots"] = new_total
+                    info["occupied_slots"] = new_occupied
+        except Exception:
+            pass
+
     # Fallback: se dmidecode falhou ou não retornou slots, tenta /sys/bus/memory/devices/
     if info["total_slots"] == 0:
         try:
@@ -698,7 +766,9 @@ class SensorServer:
     def _classify_temp_sensors(self):
         # Mapeia chips coretemp-isa-XXXX para socket index sequencial
         coretemp_chips = sorted({lbl.split("/")[0] for lbl in self.temp_sensors if "coretemp" in lbl.split("/")[0].lower()})
-        chip_to_socket = {chip: idx for idx, chip in enumerate(coretemp_chips)}
+        k10temp_chips = sorted({lbl.split("/")[0] for lbl in self.temp_sensors if "k10temp" in lbl.split("/")[0].lower() or "zenpower" in lbl.split("/")[0].lower()})
+        chip_to_socket_coretemp = {chip: idx for idx, chip in enumerate(coretemp_chips)}
+        chip_to_socket_k10 = {chip: idx for idx, chip in enumerate(k10temp_chips)}
 
         for label in self.temp_sensors:
             lower = label.lower()
@@ -706,7 +776,7 @@ class SensorServer:
             sensor_name = label.split("/")[1] if "/" in label else label
 
             if "coretemp" in chip.lower():
-                socket_idx = chip_to_socket.get(chip, 0)
+                socket_idx = chip_to_socket_coretemp.get(chip, 0)
                 if "package" in lower:
                     self.temp_label_map[label] = f"cpu{socket_idx}_package"
                 else:
@@ -717,10 +787,14 @@ class SensorServer:
                     else:
                         self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
             elif "k10temp" in chip.lower() or "zenpower" in chip.lower():
-                # AMD: tdie/tctl
-                socket_idx = chip_to_socket.get(chip, 0)
-                if "tctl" in lower or "tdie" in lower or "tccd" not in lower:
+                # AMD: socket sequencial
+                socket_idx = chip_to_socket_k10.get(chip, 0)
+                if "tctl" in lower or "tdie" in lower:
                     self.temp_label_map[label] = f"cpu{socket_idx}_package"
+                elif re.search(r"tccd\d*", lower):
+                    ccd_match = re.search(r"tccd(\d+)", lower)
+                    cid = ccd_match.group(1) if ccd_match else "0"
+                    self.temp_label_map[label] = f"cpu{socket_idx}_core_{cid}"
                 else:
                     self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
             elif "amdgpu" in chip.lower() or "radeon" in chip.lower() or "nouveau" in chip.lower():
@@ -879,6 +953,31 @@ class SensorServer:
         # Compatibilidade: cpu/gpu/board agregados
         if cpus_temps_list and "cpu" not in temperatures:
             temperatures["cpu"] = cpus_temps_list[0]["package"]
+
+        # Fallback: se não há dados de temp por núcleo (sensor não reconhecido),
+        # constrói cpus_temps_list a partir da topologia da CPU com a temp agregada
+        if not cpus_temps_list and cpu_info_pre.get("sockets"):
+            cpu_temp_agg = temperatures.get("cpu", 0)
+            for sock_info in cpu_info_pre["sockets"]:
+                sid = sock_info["id"]
+                thread_usages_map = sock_info.get("thread_usages", {})
+                thread_ids = sorted(thread_usages_map.keys())
+                core_count = sock_info.get("core_count", len(thread_ids))
+                cores_fb = []
+                threads_per_core = max(1, len(thread_ids) // max(1, core_count))
+                for ci in range(core_count):
+                    start = ci * threads_per_core
+                    end = start + threads_per_core
+                    relevant = [thread_usages_map[t] for t in thread_ids[start:end] if t in thread_usages_map]
+                    usage = round(sum(relevant) / len(relevant), 1) if relevant else 0
+                    cores_fb.append({"id": ci, "temp": cpu_temp_agg, "usage": usage})
+                cpus_temps_list.append({
+                    "socket": sid,
+                    "package": cpu_temp_agg,
+                    "cores": cores_fb,
+                })
+            if cpus_temps_list:
+                print(f"ℹ️  cpus_temps construído via fallback de topologia ({len(cpus_temps_list)} socket(s))")
 
         # Fans - enviar com índice sequencial para o frontend
         fans = {}
