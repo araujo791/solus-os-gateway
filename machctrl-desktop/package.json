@@ -2,16 +2,19 @@
   "name": "machctrl",
   "version": "2.0.0",
   "description": "MachCtrl — Monitor e Otimizador de Hardware para Linux",
+  "homepage": "https://github.com/araujo791/solus-os-gateway",
   "main": "electron/main.js",
-  "author": "MachCtrl",
+  "author": {
+    "name": "MachCtrl",
+    "email": "machctrl@localhost"
+  },
   "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "build": "vite build && electron-builder build --linux",
+    "build": "vite build && electron-builder build --linux AppImage pacman",
     "build:appimage": "vite build && electron-builder build --linux AppImage",
     "build:pacman": "vite build && electron-builder build --linux pacman",
-    "build:deb": "vite build && electron-builder build --linux deb",
     "preview": "vite preview"
   },
   "build": {
@@ -33,17 +36,15 @@
       }
     ],
     "linux": {
-      "target": ["AppImage", "pacman", "deb"],
-      "icon": "src/assets/icon.png",
+      "target": ["AppImage", "pacman"],
       "category": "System",
       "synopsis": "Monitor e Otimizador de Hardware",
-      "description": "Monitor de hardware em tempo real com otimizador de sistema, limpeza e benchmark — estilo Sensei para Linux"
+      "description": "Monitor de hardware em tempo real — CPU, GPU, RAM, Discos, Benchmark, Limpeza"
     },
     "pacman": {
+      "packageName": "machctrl",
+      "maintainer": "MachCtrl <machctrl@localhost>",
       "depends": ["python", "python-psutil", "lm_sensors", "dmidecode", "lshw"]
-    },
-    "deb": {
-      "depends": ["python3", "python3-psutil", "lm-sensors", "dmidecode", "lshw"]
     }
   },
   "dependencies": {

@@ -6,6 +6,9 @@ const os = require('os')
 const fs = require('fs')
 const net = require('net')
 
+// Permite WebSocket para localhost quando empacotado
+app.commandLine.appendSwitch('disable-features', 'BlockInsecurePrivateNetworkRequests')
+
 log.transports.file.level = 'info'
 log.info('MachCtrl Desktop iniciando...')
 
@@ -83,6 +86,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false,   // permite ws://localhost do file://
     },
   })
 
@@ -117,6 +121,8 @@ ipcMain.handle('restart-backend',   async () => {
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   await startBackend()
+  // Dá tempo ao backend para ligar na porta antes de abrir a janela
+  await new Promise(r => setTimeout(r, 1200))
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
