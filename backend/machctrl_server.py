@@ -266,8 +266,68 @@ def get_cpu_voltage():
     return 0
 
 
+def _parse_dmidecode_blocks(output):
+    """Parseia blocos de 'dmidecode -t 17' e retorna (slots, total, occupied)."""
+    slots = []
+    total = 0
+    occupied = 0
+    blocks = re.split(r"^Memory Device$", output, flags=re.MULTILINE)
+    for block in blocks[1:]:
+        if "Size:" not in block:
+            continue
+        total += 1
+        size_line = re.search(r"Size:\s+(.+)", block)
+        if not size_line:
+            continue
+        size_text = size_line.group(1).strip()
+        if "No Module" in size_text or "Not Installed" in size_text or size_text == "0":
+            continue
+        size_match = re.match(r"(\d+)\s*(kB|MB|GB|TB)", size_text)
+        if not size_match:
+            continue
+        occupied += 1
+        size_val = int(size_match.group(1))
+        size_unit = size_match.group(2)
+        if size_unit == "kB":
+            size_gb = round(size_val / (1024 * 1024), 2)
+        elif size_unit == "MB":
+            size_gb = round(size_val / 1024, 1)
+        elif size_unit == "TB":
+            size_gb = size_val * 1024
+        else:
+            size_gb = size_val
+        speed_m  = re.search(r"^\s*Speed:\s+(\d+)\s*(MHz|MT/s)", block, re.MULTILINE)
+        cspeed_m = re.search(r"Configured (?:Memory |Clock )?Speed:\s+(\d+)\s*(MHz|MT/s)", block)
+        volt_m   = re.search(r"Configured Voltage:\s+([\d.]+)\s*V", block) or \
+                   re.search(r"Minimum Voltage:\s+([\d.]+)\s*V", block)
+        type_m   = re.search(r"^\s*Type:\s+(\S+)", block, re.MULTILINE)
+        loc_m    = re.search(r"^\s*Locator:\s+(.+)", block, re.MULTILINE)
+        bank_m   = re.search(r"Bank Locator:\s+(.+)", block)
+        mfr_m    = re.search(r"Manufacturer:\s+(.+)", block)
+        part_m   = re.search(r"Part Number:\s+(.+)", block)
+        serial_m = re.search(r"Serial Number:\s+(.+)", block)
+        rank_m   = re.search(r"Rank:\s+(\d+)", block)
+        locator  = loc_m.group(1).strip() if loc_m else "?"
+        bank     = bank_m.group(1).strip() if bank_m else ""
+        mfr      = mfr_m.group(1).strip() if mfr_m else "?"
+        if mfr in ("Unknown", "Not Specified", "Undefined", ""):
+            mfr = "?"
+        slots.append({
+            "locator": locator, "bank": bank, "size_gb": size_gb,
+            "type": type_m.group(1).strip() if type_m else "?",
+            "speed_mhz": int(speed_m.group(1)) if speed_m else 0,
+            "configured_speed_mhz": int(cspeed_m.group(1)) if cspeed_m else 0,
+            "voltage": float(volt_m.group(1)) if volt_m else 0,
+            "manufacturer": mfr,
+            "part_number": part_m.group(1).strip() if part_m else "?",
+            "serial": serial_m.group(1).strip() if serial_m else "",
+            "rank": int(rank_m.group(1)) if rank_m else 0,
+        })
+    return slots, total, occupied
+
+
 def get_memory_info():
-    """Obtém uso de memória e informações dos slots via dmidecode."""
+    """Obtém uso de memória e informações dos slots — múltiplos métodos em cascata."""
     mem = psutil.virtual_memory()
     info = {
         "usage": round(mem.percent, 1),
@@ -278,219 +338,109 @@ def get_memory_info():
         "occupied_slots": 0,
     }
 
-    try:
-        result = subprocess.run(
-            ["dmidecode", "-t", "17"],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0:
-            output = result.stdout
-            # Divide por "Memory Device\n" para separar cada slot
-            # O split em "Memory Device" pode pegar substrings - usamos regex
-            blocks = re.split(r"^Memory Device$", output, flags=re.MULTILINE)
-            for block in blocks[1:]:  # skip header
-                if "Size:" not in block:
-                    continue
-
-                info["total_slots"] += 1
-
-                size_line = re.search(r"Size:\s+(.+)", block)
-                if not size_line:
-                    continue
-                size_text = size_line.group(1).strip()
-
-                if "No Module" in size_text or "Not Installed" in size_text or size_text == "0":
-                    continue
-
-                size_match = re.match(r"(\d+)\s*(kB|MB|GB|TB)", size_text)
-                if not size_match:
-                    continue
-
-                info["occupied_slots"] += 1
-                size_val = int(size_match.group(1))
-                size_unit = size_match.group(2)
-                if size_unit == "kB":
-                    size_gb = round(size_val / (1024 * 1024), 2)
-                elif size_unit == "MB":
-                    size_gb = round(size_val / 1024, 1)
-                elif size_unit == "TB":
-                    size_gb = size_val * 1024
-                else:
-                    size_gb = size_val
-
-                speed_match = re.search(r"^\s*Speed:\s+(\d+)\s*(MHz|MT/s)", block, re.MULTILINE)
-                conf_speed_match = re.search(r"Configured (?:Memory |Clock )?Speed:\s+(\d+)\s*(MHz|MT/s)", block)
-                voltage_match = re.search(r"Configured Voltage:\s+([\d.]+)\s*V", block)
-                if not voltage_match:
-                    voltage_match = re.search(r"Minimum Voltage:\s+([\d.]+)\s*V", block)
-                type_match = re.search(r"^\s*Type:\s+(\S+)", block, re.MULTILINE)
-                locator_match = re.search(r"^\s*Locator:\s+(.+)", block, re.MULTILINE)
-                bank_match = re.search(r"Bank Locator:\s+(.+)", block)
-                manufacturer_match = re.search(r"Manufacturer:\s+(.+)", block)
-                part_match = re.search(r"Part Number:\s+(.+)", block)
-                serial_match = re.search(r"Serial Number:\s+(.+)", block)
-                rank_match = re.search(r"Rank:\s+(\d+)", block)
-
-                locator = locator_match.group(1).strip() if locator_match else "?"
-                bank = bank_match.group(1).strip() if bank_match else ""
-                manufacturer = manufacturer_match.group(1).strip() if manufacturer_match else "?"
-                if manufacturer in ("Unknown", "Not Specified", "Undefined", ""):
-                    manufacturer = "?"
-
-                slot = {
-                    "locator": locator,
-                    "bank": bank,
-                    "size_gb": size_gb,
-                    "type": type_match.group(1).strip() if type_match else "?",
-                    "speed_mhz": int(speed_match.group(1)) if speed_match else 0,
-                    "configured_speed_mhz": int(conf_speed_match.group(1)) if conf_speed_match else 0,
-                    "voltage": float(voltage_match.group(1)) if voltage_match else 0,
-                    "manufacturer": manufacturer,
-                    "part_number": part_match.group(1).strip() if part_match else "?",
-                    "serial": serial_match.group(1).strip() if serial_match else "",
-                    "rank": int(rank_match.group(1)) if rank_match else 0,
-                }
-                info["slots"].append(slot)
-    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-        print(f"⚠️  dmidecode não disponível ou sem permissão: {e}")
-
-    # Se dmidecode encontrou slots mas nenhum ocupado (sem root / BIOS quirk),
-    # tenta sudo dmidecode (se disponível sem senha via sudoers)
-    if info["total_slots"] > 0 and info["occupied_slots"] == 0:
+    # Método 1: dmidecode direto (funciona se rodando como root)
+    dmidecode_output = None
+    for cmd in [["dmidecode", "-t", "17"], ["sudo", "-n", "dmidecode", "-t", "17"]]:
         try:
-            result2 = subprocess.run(
-                ["sudo", "-n", "dmidecode", "-t", "17"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result2.returncode == 0:
-                output2 = result2.stdout
-                blocks2 = re.split(r"^Memory Device$", output2, flags=re.MULTILINE)
-                new_slots = []
-                new_total = 0
-                new_occupied = 0
-                for block in blocks2[1:]:
-                    if "Size:" not in block:
-                        continue
-                    new_total += 1
-                    size_line = re.search(r"Size:\s+(.+)", block)
-                    if not size_line:
-                        continue
-                    size_text = size_line.group(1).strip()
-                    if "No Module" in size_text or "Not Installed" in size_text or size_text == "0":
-                        continue
-                    size_match = re.match(r"(\d+)\s*(kB|MB|GB|TB)", size_text)
-                    if not size_match:
-                        continue
-                    new_occupied += 1
-                    size_val = int(size_match.group(1))
-                    size_unit = size_match.group(2)
-                    if size_unit == "kB":
-                        size_gb = round(size_val / (1024 * 1024), 2)
-                    elif size_unit == "MB":
-                        size_gb = round(size_val / 1024, 1)
-                    elif size_unit == "TB":
-                        size_gb = size_val * 1024
-                    else:
-                        size_gb = size_val
-                    speed_match2 = re.search(r"^\s*Speed:\s+(\d+)\s*(MHz|MT/s)", block, re.MULTILINE)
-                    conf_speed_match2 = re.search(r"Configured (?:Memory |Clock )?Speed:\s+(\d+)\s*(MHz|MT/s)", block)
-                    voltage_match2 = re.search(r"Configured Voltage:\s+([\d.]+)\s*V", block)
-                    type_match2 = re.search(r"^\s*Type:\s+(\S+)", block, re.MULTILINE)
-                    locator_match2 = re.search(r"^\s*Locator:\s+(.+)", block, re.MULTILINE)
-                    bank_match2 = re.search(r"Bank Locator:\s+(.+)", block)
-                    manufacturer_match2 = re.search(r"Manufacturer:\s+(.+)", block)
-                    part_match2 = re.search(r"Part Number:\s+(.+)", block)
-                    locator2 = locator_match2.group(1).strip() if locator_match2 else "?"
-                    bank2 = bank_match2.group(1).strip() if bank_match2 else ""
-                    mfr2 = manufacturer_match2.group(1).strip() if manufacturer_match2 else "?"
-                    if mfr2 in ("Unknown", "Not Specified", "Undefined", ""):
-                        mfr2 = "?"
-                    new_slots.append({
-                        "locator": locator2, "bank": bank2, "size_gb": size_gb,
-                        "type": type_match2.group(1).strip() if type_match2 else "?",
-                        "speed_mhz": int(speed_match2.group(1)) if speed_match2 else 0,
-                        "configured_speed_mhz": int(conf_speed_match2.group(1)) if conf_speed_match2 else 0,
-                        "voltage": float(voltage_match2.group(1)) if voltage_match2 else 0,
-                        "manufacturer": mfr2,
-                        "part_number": part_match2.group(1).strip() if part_match2 else "?",
-                        "serial": "", "rank": 0,
-                    })
-                if new_occupied > 0:
-                    info["slots"] = new_slots
-                    info["total_slots"] = new_total
-                    info["occupied_slots"] = new_occupied
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=6)
+            if r.returncode == 0 and "Memory Device" in r.stdout:
+                dmidecode_output = r.stdout
+                break
         except Exception:
             pass
 
-    # Fallback: se dmidecode falhou ou não retornou slots, tenta /sys/bus/memory/devices/
-    if info["total_slots"] == 0:
+    if dmidecode_output:
+        slots, total, occupied = _parse_dmidecode_blocks(dmidecode_output)
+        info["total_slots"] = total
+        info["occupied_slots"] = occupied
+        info["slots"] = slots
+
+    # Método 2: lshw -json (funciona sem root, dá dados do hardware)
+    if info["occupied_slots"] == 0:
         try:
-            mem_sys = "/sys/bus/memory/devices"
-            if os.path.exists(mem_sys):
-                # Cada entrada é uma "section" de memória física (geralmente 128MB ou mais)
-                # Agrupa por bloco contíguo/banco para estimar slots
-                sections = sorted(os.listdir(mem_sys))
-                online_sections = []
-                for sec in sections:
-                    state_path = os.path.join(mem_sys, sec, "state")
-                    if os.path.exists(state_path):
-                        try:
-                            with open(state_path) as f:
-                                state = f.read().strip()
-                            if state == "online":
-                                online_sections.append(sec)
-                        except Exception:
-                            pass
-                if online_sections:
-                    # Tenta ler block_size_bytes para calcular total
-                    block_size = 0
-                    block_size_path = "/sys/devices/system/memory/block_size_bytes"
-                    if os.path.exists(block_size_path):
-                        try:
-                            with open(block_size_path) as f:
-                                block_size = int(f.read().strip(), 16)
-                        except Exception:
-                            pass
-                    total_from_sys = block_size * len(online_sections) if block_size else 0
-                    # Usa lshw para pegar info dos bancos de memória se disponível
-                    try:
-                        lshw = subprocess.run(
-                            ["lshw", "-class", "memory", "-short"],
-                            capture_output=True, text=True, timeout=5
-                        )
-                        if lshw.returncode == 0:
-                            bank_lines = [l for l in lshw.stdout.splitlines() if "bank" in l.lower() or "dimm" in l.lower()]
-                            for bl in bank_lines:
-                                parts = bl.split()
-                                size_gb = 0
-                                mem_type = "?"
-                                for p in parts:
-                                    if re.match(r"^\d+GiB$", p, re.IGNORECASE):
-                                        size_gb = int(p[:-3])
-                                    elif re.match(r"^\d+MiB$", p, re.IGNORECASE):
-                                        size_gb = round(int(p[:-3]) / 1024, 1)
-                                    elif p in ("DDR4", "DDR5", "DDR3", "LPDDR4", "LPDDR5"):
-                                        mem_type = p
-                                if size_gb > 0:
-                                    info["total_slots"] += 1
-                                    info["occupied_slots"] += 1
-                                    info["slots"].append({
-                                        "locator": f"DIMM {info['total_slots']}",
-                                        "bank": "",
-                                        "size_gb": size_gb,
-                                        "type": mem_type,
-                                        "speed_mhz": 0,
-                                        "configured_speed_mhz": 0,
-                                        "voltage": 0,
-                                        "manufacturer": "?",
-                                        "part_number": "?",
-                                        "serial": "",
-                                        "rank": 0,
-                                    })
-                    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
-                        pass
+            r = subprocess.run(
+                ["lshw", "-class", "memory", "-json"],
+                capture_output=True, text=True, timeout=8
+            )
+            if r.returncode == 0:
+                import json as _json
+                hw = _json.loads(r.stdout) if r.stdout.strip().startswith("[") else [_json.loads(r.stdout)]
+                banks = []
+                def _walk(node):
+                    if isinstance(node, list):
+                        for n in node: _walk(n)
+                    elif isinstance(node, dict):
+                        cls = node.get("class", "")
+                        desc = node.get("description", "").lower()
+                        if cls == "memory" and ("dimm" in desc or "bank" in desc or "module" in desc):
+                            banks.append(node)
+                        for child in node.get("children", []):
+                            _walk(child)
+                _walk(hw)
+                new_total = 0
+                new_occ = 0
+                new_slots = []
+                for b in banks:
+                    new_total += 1
+                    size_bytes = b.get("size", 0)
+                    if not size_bytes:
+                        continue
+                    new_occ += 1
+                    size_gb = round(size_bytes / (1024**3), 1)
+                    # Frequência via 'clock' ou 'capabilities'
+                    clock_hz = b.get("clock", 0) or 0
+                    speed_mhz = round(clock_hz / 1_000_000) if clock_hz else 0
+                    # Produto / fabricante
+                    product = b.get("product", "?") or "?"
+                    vendor  = b.get("vendor", "?") or "?"
+                    if vendor in ("", "Unknown"): vendor = "?"
+                    # Slot name
+                    slot_id = b.get("slot", b.get("physid", f"DIMM {new_total}"))
+                    # Tipo via description
+                    desc_raw = b.get("description", "?")
+                    mem_type = "?"
+                    for t in ("DDR5", "DDR4", "DDR3", "DDR2", "LPDDR5", "LPDDR4"):
+                        if t in desc_raw.upper():
+                            mem_type = t
+                            break
+                    new_slots.append({
+                        "locator": str(slot_id), "bank": "",
+                        "size_gb": size_gb, "type": mem_type,
+                        "speed_mhz": speed_mhz, "configured_speed_mhz": speed_mhz,
+                        "voltage": 0, "manufacturer": vendor,
+                        "part_number": product, "serial": b.get("serial", ""), "rank": 0,
+                    })
+                if new_occ > 0:
+                    info["total_slots"] = max(info["total_slots"], new_total)
+                    info["occupied_slots"] = new_occ
+                    info["slots"] = new_slots
         except Exception as e:
-            print(f"⚠️  Fallback /sys/bus/memory: {e}")
+            print(f"⚠️  lshw -json falhou: {e}")
+
+    # Método 3: /proc/meminfo + heurística por slot (último recurso)
+    if info["occupied_slots"] == 0:
+        try:
+            total_gb = info["total_gb"]
+            # Tamanhos comuns de módulo: 4, 8, 16, 32, 64 GB
+            for module_size in [64, 32, 16, 8, 4]:
+                if total_gb % module_size < 0.5:
+                    n_modules = round(total_gb / module_size)
+                    if 1 <= n_modules <= 16:
+                        for i in range(n_modules):
+                            info["slots"].append({
+                                "locator": f"DIMM {i+1}", "bank": "",
+                                "size_gb": module_size, "type": "?",
+                                "speed_mhz": 0, "configured_speed_mhz": 0,
+                                "voltage": 0, "manufacturer": "?",
+                                "part_number": "?", "serial": "", "rank": 0,
+                            })
+                        info["occupied_slots"] = n_modules
+                        if info["total_slots"] == 0:
+                            info["total_slots"] = n_modules
+                        print(f"ℹ️  Memória: heurística {n_modules}x{module_size}GB")
+                        break
+        except Exception:
+            pass
 
     return info
 
@@ -954,17 +904,20 @@ class SensorServer:
         if cpus_temps_list and "cpu" not in temperatures:
             temperatures["cpu"] = cpus_temps_list[0]["package"]
 
-        # Fallback: se não há dados de temp por núcleo (sensor não reconhecido),
-        # constrói cpus_temps_list a partir da topologia da CPU com a temp agregada
-        if not cpus_temps_list and cpu_info_pre.get("sockets"):
-            cpu_temp_agg = temperatures.get("cpu", 0)
-            for sock_info in cpu_info_pre["sockets"]:
-                sid = sock_info["id"]
-                thread_usages_map = sock_info.get("thread_usages", {})
-                thread_ids = sorted(thread_usages_map.keys())
-                core_count = sock_info.get("core_count", len(thread_ids))
+        # Garante que TODOS os sockets físicos aparecem — mesmo sem sensor de temp
+        # Mescla cpus_temps com a topologia real da CPU
+        existing_sockets = {c["socket"] for c in cpus_temps_list}
+        for sock_info in cpu_info_pre.get("sockets", []):
+            sid = sock_info["id"]
+            thread_usages_map = sock_info.get("thread_usages", {})
+            thread_ids = sorted(thread_usages_map.keys())
+            core_count = sock_info.get("core_count", max(1, len(thread_ids) // 2))
+            threads_per_core = max(1, len(thread_ids) // max(1, core_count))
+
+            if sid not in existing_sockets:
+                # Socket sem sensor → usa temp agregada se disponível
+                cpu_temp_agg = temperatures.get("cpu", 0)
                 cores_fb = []
-                threads_per_core = max(1, len(thread_ids) // max(1, core_count))
                 for ci in range(core_count):
                     start = ci * threads_per_core
                     end = start + threads_per_core
@@ -976,8 +929,39 @@ class SensorServer:
                     "package": cpu_temp_agg,
                     "cores": cores_fb,
                 })
-            if cpus_temps_list:
-                print(f"ℹ️  cpus_temps construído via fallback de topologia ({len(cpus_temps_list)} socket(s))")
+                print(f"ℹ️  Socket {sid} sem sensor de temp — adicionado via topologia")
+            else:
+                # Socket com sensor → garante que usage está correto por núcleo
+                for entry in cpus_temps_list:
+                    if entry["socket"] == sid and not any(c.get("usage", 0) > 0 for c in entry["cores"]):
+                        # recalcula usage
+                        for ci, core in enumerate(entry["cores"]):
+                            cid = core["id"]
+                            start = ci * threads_per_core
+                            end = start + threads_per_core
+                            relevant = [thread_usages_map[t] for t in thread_ids[start:end] if t in thread_usages_map]
+                            core["usage"] = round(sum(relevant) / len(relevant), 1) if relevant else 0
+
+        # Ordena por socket
+        cpus_temps_list.sort(key=lambda x: x["socket"])
+
+        # Fallback absoluto: se ainda vazio, usa topologia pura
+        if not cpus_temps_list and cpu_info_pre.get("sockets"):
+            cpu_temp_agg = temperatures.get("cpu", 0)
+            for sock_info in cpu_info_pre["sockets"]:
+                sid = sock_info["id"]
+                thread_usages_map = sock_info.get("thread_usages", {})
+                thread_ids = sorted(thread_usages_map.keys())
+                core_count = sock_info.get("core_count", max(1, len(thread_ids) // 2))
+                threads_per_core = max(1, len(thread_ids) // max(1, core_count))
+                cores_fb = []
+                for ci in range(core_count):
+                    start = ci * threads_per_core
+                    end = start + threads_per_core
+                    relevant = [thread_usages_map[t] for t in thread_ids[start:end] if t in thread_usages_map]
+                    usage = round(sum(relevant) / len(relevant), 1) if relevant else 0
+                    cores_fb.append({"id": ci, "temp": cpu_temp_agg, "usage": usage})
+                cpus_temps_list.append({"socket": sid, "package": cpu_temp_agg, "cores": cores_fb})
 
         # Fans - enviar com índice sequencial para o frontend
         fans = {}
