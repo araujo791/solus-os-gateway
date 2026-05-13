@@ -1270,8 +1270,57 @@ class SensorServer:
 
 
 if __name__ == "__main__":
+    import socket as _socket
+
+    def _port_in_use(port):
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+            return s.connect_ex(('127.0.0.1', port)) == 0
+
+    # Se a porta já está em uso, outro backend já está rodando — sai sem erro
+    if _port_in_use(WEBSOCKET_PORT):
+        print(f"ℹ️  Porta {WEBSOCKET_PORT} já em uso — backend já está rodando. Saindo.")
+        # Escreve a porta no arquivo de lock para o Electron saber
+        try:
+            import tempfile, os
+            lock = os.path.join(tempfile.gettempdir(), 'machctrl.port')
+            with open(lock, 'w') as f:
+                f.write(str(WEBSOCKET_PORT))
+        except Exception:
+            pass
+        raise SystemExit(0)
+
+    # Tenta porta alternativa se necessário (fallback)
+    port = WEBSOCKET_PORT
+    for try_port in range(WEBSOCKET_PORT, WEBSOCKET_PORT + 10):
+        if not _port_in_use(try_port):
+            port = try_port
+            break
+
+    if port != WEBSOCKET_PORT:
+        print(f"⚠️  Porta {WEBSOCKET_PORT} ocupada — usando porta {port}")
+        WEBSOCKET_PORT = port
+
+    # Escreve porta no arquivo de lock para o Electron conectar
+    try:
+        import tempfile, os
+        lock = os.path.join(tempfile.gettempdir(), 'machctrl.port')
+        with open(lock, 'w') as f:
+            f.write(str(WEBSOCKET_PORT))
+        print(f"📝 Porta gravada em {lock}")
+    except Exception as e:
+        print(f"⚠️  Não foi possível gravar porta: {e}")
+
     server = SensorServer()
     try:
         asyncio.run(server.run())
     except KeyboardInterrupt:
         print("\n🔴 MachCtrl Backend finalizado.")
+    finally:
+        # Remove lock file
+        try:
+            import tempfile, os
+            lock = os.path.join(tempfile.gettempdir(), 'machctrl.port')
+            if os.path.exists(lock):
+                os.remove(lock)
+        except Exception:
+            pass

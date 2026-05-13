@@ -1,8 +1,10 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const log = require('electron-log')
 const os = require('os')
+const fs = require('fs')
+const net = require('net')
 
 log.transports.file.level = 'info'
 log.info('MachCtrl Desktop iniciando...')
@@ -10,28 +12,45 @@ log.info('MachCtrl Desktop iniciando...')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 let mainWindow = null
 let backendProcess = null
-let tray = null
 
-// ─── Spawn Python backend ────────────────────────────────────────────────────
-function startBackend() {
-  // Resolve backend path — múltiplos fallbacks para AppImage, pacman, dev
-  let backendPath
-  if (app.isPackaged) {
-    const candidates = [
-      path.join(process.resourcesPath, 'backend', 'machctrl_server.py'),
-      path.join(path.dirname(process.execPath), 'resources', 'backend', 'machctrl_server.py'),
-      path.join(app.getAppPath(), '..', 'backend', 'machctrl_server.py'),
-      '/opt/machctrl/backend/machctrl_server.py',
-    ]
-    const fs = require('fs')
-    backendPath = candidates.find(p => {
-      try { return fs.existsSync(p) } catch { return false }
-    }) || candidates[0]
-  } else {
-    backendPath = path.join(__dirname, '..', 'backend', 'machctrl_server.py')
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function isPortInUse(port) {
+  return new Promise((resolve) => {
+    const s = net.createConnection({ port, host: '127.0.0.1' })
+    s.setTimeout(400)
+    s.on('connect', () => { s.destroy(); resolve(true) })
+    s.on('error',   () => resolve(false))
+    s.on('timeout', () => { s.destroy(); resolve(false) })
+  })
+}
+
+function resolveBackendPath() {
+  if (!app.isPackaged) {
+    return path.join(__dirname, '..', 'backend', 'machctrl_server.py')
+  }
+  const candidates = [
+    path.join(process.resourcesPath, 'backend', 'machctrl_server.py'),
+    path.join(path.dirname(process.execPath), 'resources', 'backend', 'machctrl_server.py'),
+    path.join(app.getAppPath(), '..', 'backend', 'machctrl_server.py'),
+    '/opt/machctrl/backend/machctrl_server.py',
+  ]
+  const found = candidates.find(p => { try { return fs.existsSync(p) } catch { return false } })
+  if (found) return found
+  log.error('Backend não encontrado. Candidatos:', candidates)
+  return candidates[0]
+}
+
+// ─── Start backend ────────────────────────────────────────────────────────────
+async function startBackend() {
+  // Se porta já em uso, backend (systemd ou outra instância) já está rodando
+  const inUse = await isPortInUse(8765)
+  if (inUse) {
+    log.info('Porta 8765 já em uso — backend existente será reutilizado.')
+    return
   }
 
-  log.info(`Backend path: ${backendPath}`)
+  const backendPath = resolveBackendPath()
+  log.info(`Subindo backend: ${backendPath}`)
 
   backendProcess = spawn('python3', [backendPath], {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -41,7 +60,7 @@ function startBackend() {
   backendProcess.stderr.on('data', (d) => log.warn(`[backend:err] ${d.toString().trim()}`))
   backendProcess.on('exit', (code) => {
     log.warn(`Backend saiu com código ${code}`)
-    if (code !== 0 && mainWindow) {
+    if (code !== 0 && code !== null && mainWindow) {
       mainWindow.webContents.send('backend-status', { connected: false, error: `Backend encerrou (${code})` })
     }
   })
@@ -49,32 +68,28 @@ function startBackend() {
   log.info(`Backend PID: ${backendProcess.pid}`)
 }
 
-// ─── Create main window ──────────────────────────────────────────────────────
+// ─── Create window ────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 960,
     minHeight: 640,
-    frame: false,            // Sem borda — como o Sensei
+    frame: false,
     transparent: false,
     backgroundColor: '#0a0c14',
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
-    icon: path.join(__dirname, '..', 'src', 'assets', 'icon.png'),
   })
 
-  // Remove menu bar
   Menu.setApplicationMenu(null)
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    // mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
@@ -82,41 +97,28 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
-// ─── IPC handlers ────────────────────────────────────────────────────────────
-ipcMain.handle('window-minimize', () => mainWindow?.minimize())
-ipcMain.handle('window-maximize', () => {
+// ─── IPC ──────────────────────────────────────────────────────────────────────
+ipcMain.handle('window-minimize',   () => mainWindow?.minimize())
+ipcMain.handle('window-maximize',   () => {
   if (mainWindow?.isMaximized()) mainWindow.unmaximize()
   else mainWindow?.maximize()
 })
-ipcMain.handle('window-close', () => mainWindow?.close())
+ipcMain.handle('window-close',      () => mainWindow?.close())
 ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
-
-ipcMain.handle('get-platform', () => ({
-  platform: process.platform,
-  arch: process.arch,
-  hostname: os.hostname(),
-  release: os.release(),
-}))
-
-ipcMain.handle('restart-backend', () => {
-  if (backendProcess) {
-    backendProcess.kill()
-    backendProcess = null
-  }
-  setTimeout(startBackend, 500)
+ipcMain.handle('get-platform',      () => ({ platform: process.platform, arch: process.arch, hostname: os.hostname(), release: os.release() }))
+ipcMain.handle('open-external',     (_, url) => shell.openExternal(url))
+ipcMain.handle('restart-backend',   async () => {
+  if (backendProcess) { backendProcess.kill(); backendProcess = null }
+  await new Promise(r => setTimeout(r, 600))
+  await startBackend()
   return { ok: true }
 })
 
-ipcMain.handle('open-external', (_, url) => shell.openExternal(url))
-
-// ─── App lifecycle ───────────────────────────────────────────────────────────
-app.whenReady().then(() => {
-  startBackend()
+// ─── Lifecycle ────────────────────────────────────────────────────────────────
+app.whenReady().then(async () => {
+  await startBackend()
   createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
 app.on('window-all-closed', () => {
@@ -127,8 +129,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  if (backendProcess) {
-    backendProcess.kill()
-    backendProcess = null
-  }
+  if (backendProcess) { backendProcess.kill(); backendProcess = null }
 })
