@@ -14,9 +14,22 @@ let tray = null
 
 // ─── Spawn Python backend ────────────────────────────────────────────────────
 function startBackend() {
-  const backendPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'backend', 'machctrl_server.py')
-    : path.join(__dirname, '..', 'backend', 'machctrl_server.py')
+  // Resolve backend path — múltiplos fallbacks para AppImage, pacman, dev
+  let backendPath
+  if (app.isPackaged) {
+    const candidates = [
+      path.join(process.resourcesPath, 'backend', 'machctrl_server.py'),
+      path.join(path.dirname(process.execPath), 'resources', 'backend', 'machctrl_server.py'),
+      path.join(app.getAppPath(), '..', 'backend', 'machctrl_server.py'),
+      '/opt/machctrl/backend/machctrl_server.py',
+    ]
+    const fs = require('fs')
+    backendPath = candidates.find(p => {
+      try { return fs.existsSync(p) } catch { return false }
+    }) || candidates[0]
+  } else {
+    backendPath = path.join(__dirname, '..', 'backend', 'machctrl_server.py')
+  }
 
   log.info(`Backend path: ${backendPath}`)
 
