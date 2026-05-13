@@ -55,16 +55,35 @@ async function startBackend() {
   const backendPath = resolveBackendPath()
   log.info(`Subindo backend: ${backendPath}`)
 
-  backendProcess = spawn('python3', [backendPath], {
+  // Usa o Python do sistema (não do AppImage) com PYTHONPATH limpo
+  const python3 = '/usr/bin/python3'
+  const env = Object.assign({}, process.env, {
+    PYTHONUNBUFFERED: '1',
+    // Remove variáveis de ambiente que o AppImage injeta e podem quebrar imports
+    LD_LIBRARY_PATH: '',
+    PYTHONPATH: '',
+    PYTHONHOME: '',
+  })
+
+  backendProcess = spawn(python3, [backendPath], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    env,
+    detached: false,
   })
 
   backendProcess.stdout.on('data', (d) => log.info(`[backend] ${d.toString().trim()}`))
   backendProcess.stderr.on('data', (d) => log.warn(`[backend:err] ${d.toString().trim()}`))
-  backendProcess.on('exit', (code) => {
-    log.warn(`Backend saiu com código ${code}`)
-    if (code !== 0 && code !== null && mainWindow) {
-      mainWindow.webContents.send('backend-status', { connected: false, error: `Backend encerrou (${code})` })
+  backendProcess.on('exit', (code, signal) => {
+    log.warn(`Backend saiu com código ${code} sinal ${signal}`)
+    if (mainWindow) {
+      mainWindow.webContents.send('backend-status', { connected: false, error: `Backend encerrou (código ${code})` })
+    }
+    // Tenta reiniciar após 3s se não foi kill intencional
+    if (signal !== 'SIGTERM' && signal !== 'SIGKILL') {
+      setTimeout(async () => {
+        log.info('Tentando reiniciar backend...')
+        await startBackend()
+      }, 3000)
     }
   })
 
