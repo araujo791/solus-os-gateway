@@ -416,8 +416,10 @@ def get_gpu_name():
     return ""
 
 
+def get_system_info():
+    """Obtém informações do sistema: hostname, kernel, OS, uptime, placa-mãe, GPU."""
+    info = {"hostname": "", "kernel": "", "os": "", "uptime": "", "board": "Desconhecida", "gpu_name": ""}
 
-    info = {"hostname": "", "kernel": "", "os": "", "uptime": "", "board": "Desconhecida"}
     try:
         info["hostname"] = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
     except FileNotFoundError:
