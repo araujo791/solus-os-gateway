@@ -44,13 +44,22 @@ def find_hwmon_devices():
     devices = {}
     if not os.path.exists(HWMON_BASE):
         return devices
+    name_counts = {}
     for entry in sorted(os.listdir(HWMON_BASE)):
         path = os.path.join(HWMON_BASE, entry)
         name_file = os.path.join(path, "name")
         if os.path.exists(name_file):
             with open(name_file) as f:
                 name = f.read().strip()
-            devices[name] = path
+            # Se o nome já existe, usa nome+índice para evitar sobrescrever
+            # Ex: dois chips "coretemp" viram "coretemp" e "coretemp_1"
+            if name in name_counts:
+                name_counts[name] += 1
+                unique_name = f"{name}_{name_counts[name]}"
+            else:
+                name_counts[name] = 0
+                unique_name = name
+            devices[unique_name] = path
     return devices
 
 
@@ -282,19 +291,19 @@ def _parse_dmidecode_blocks(output):
         size_text = size_line.group(1).strip()
         if "No Module" in size_text or "Not Installed" in size_text or size_text == "0":
             continue
-        size_match = re.match(r"(\d+)\s*(kB|MB|GB|TB)", size_text)
+        size_match = re.match(r"(\d+)\s*(kB|KiB|MB|MiB|GB|GiB|TB|TiB)", size_text, re.IGNORECASE)
         if not size_match:
             continue
         occupied += 1
         size_val = int(size_match.group(1))
-        size_unit = size_match.group(2)
-        if size_unit == "kB":
+        size_unit = size_match.group(2).lower()
+        if size_unit in ("kb", "kib"):
             size_gb = round(size_val / (1024 * 1024), 2)
-        elif size_unit == "MB":
+        elif size_unit in ("mb", "mib"):
             size_gb = round(size_val / 1024, 1)
-        elif size_unit == "TB":
+        elif size_unit in ("tb", "tib"):
             size_gb = size_val * 1024
-        else:
+        else:  # gb, gib
             size_gb = size_val
         speed_m  = re.search(r"^\s*Speed:\s+(\d+)\s*(MHz|MT/s)", block, re.MULTILINE)
         cspeed_m = re.search(r"Configured (?:Memory |Clock )?Speed:\s+(\d+)\s*(MHz|MT/s)", block)
@@ -355,69 +364,7 @@ def get_memory_info():
         info["occupied_slots"] = occupied
         info["slots"] = slots
 
-    # Método 2: lshw -json (funciona sem root, dá dados do hardware)
-    if info["occupied_slots"] == 0:
-        try:
-            r = subprocess.run(
-                ["lshw", "-class", "memory", "-json"],
-                capture_output=True, text=True, timeout=8
-            )
-            if r.returncode == 0:
-                import json as _json
-                hw = _json.loads(r.stdout) if r.stdout.strip().startswith("[") else [_json.loads(r.stdout)]
-                banks = []
-                def _walk(node):
-                    if isinstance(node, list):
-                        for n in node: _walk(n)
-                    elif isinstance(node, dict):
-                        cls = node.get("class", "")
-                        desc = node.get("description", "").lower()
-                        if cls == "memory" and ("dimm" in desc or "bank" in desc or "module" in desc):
-                            banks.append(node)
-                        for child in node.get("children", []):
-                            _walk(child)
-                _walk(hw)
-                new_total = 0
-                new_occ = 0
-                new_slots = []
-                for b in banks:
-                    new_total += 1
-                    size_bytes = b.get("size", 0)
-                    if not size_bytes:
-                        continue
-                    new_occ += 1
-                    size_gb = round(size_bytes / (1024**3), 1)
-                    # Frequência via 'clock' ou 'capabilities'
-                    clock_hz = b.get("clock", 0) or 0
-                    speed_mhz = round(clock_hz / 1_000_000) if clock_hz else 0
-                    # Produto / fabricante
-                    product = b.get("product", "?") or "?"
-                    vendor  = b.get("vendor", "?") or "?"
-                    if vendor in ("", "Unknown"): vendor = "?"
-                    # Slot name
-                    slot_id = b.get("slot", b.get("physid", f"DIMM {new_total}"))
-                    # Tipo via description
-                    desc_raw = b.get("description", "?")
-                    mem_type = "?"
-                    for t in ("DDR5", "DDR4", "DDR3", "DDR2", "LPDDR5", "LPDDR4"):
-                        if t in desc_raw.upper():
-                            mem_type = t
-                            break
-                    new_slots.append({
-                        "locator": str(slot_id), "bank": "",
-                        "size_gb": size_gb, "type": mem_type,
-                        "speed_mhz": speed_mhz, "configured_speed_mhz": speed_mhz,
-                        "voltage": 0, "manufacturer": vendor,
-                        "part_number": product, "serial": b.get("serial", ""), "rank": 0,
-                    })
-                if new_occ > 0:
-                    info["total_slots"] = max(info["total_slots"], new_total)
-                    info["occupied_slots"] = new_occ
-                    info["slots"] = new_slots
-        except Exception as e:
-            print(f"⚠️  lshw -json falhou: {e}")
-
-    # Método 3: /proc/meminfo + heurística por slot (último recurso)
+    # Método 2: heurística /proc/meminfo (último recurso se dmidecode falhou)
     if info["occupied_slots"] == 0:
         try:
             total_gb = info["total_gb"]
@@ -714,30 +661,45 @@ class SensorServer:
         self.detect_hardware()
 
     def _classify_temp_sensors(self):
-        # Mapeia chips coretemp-isa-XXXX para socket index sequencial
-        coretemp_chips = sorted({lbl.split("/")[0] for lbl in self.temp_sensors if "coretemp" in lbl.split("/")[0].lower()})
-        k10temp_chips = sorted({lbl.split("/")[0] for lbl in self.temp_sensors if "k10temp" in lbl.split("/")[0].lower() or "zenpower" in lbl.split("/")[0].lower()})
-        chip_to_socket_coretemp = {chip: idx for idx, chip in enumerate(coretemp_chips)}
-        chip_to_socket_k10 = {chip: idx for idx, chip in enumerate(k10temp_chips)}
+        # Mapeia chips coretemp / coretemp_1 / coretemp_2 → socket 0, 1, 2...
+        coretemp_chips = sorted({
+            lbl.split("/")[0] for lbl in self.temp_sensors
+            if re.match(r"coretemp", lbl.split("/")[0].lower())
+        })
+        k10temp_chips = sorted({
+            lbl.split("/")[0] for lbl in self.temp_sensors
+            if re.match(r"k10temp|zenpower", lbl.split("/")[0].lower())
+        })
+
+        # Extrai índice de socket do nome: "coretemp" → 0, "coretemp_1" → 1
+        def chip_socket_idx(chip_name, base):
+            m = re.match(rf"{base}_(\d+)$", chip_name.lower())
+            return int(m.group(1)) if m else 0
+
+        chip_to_socket_coretemp = {
+            chip: chip_socket_idx(chip, "coretemp") for chip in coretemp_chips
+        }
+        chip_to_socket_k10 = {
+            chip: chip_socket_idx(chip, "k10temp") for chip in k10temp_chips
+        }
 
         for label in self.temp_sensors:
             lower = label.lower()
             chip = label.split("/")[0] if "/" in label else ""
             sensor_name = label.split("/")[1] if "/" in label else label
 
-            if "coretemp" in chip.lower():
+            if re.match(r"coretemp", chip.lower()):
                 socket_idx = chip_to_socket_coretemp.get(chip, 0)
                 if "package" in lower:
                     self.temp_label_map[label] = f"cpu{socket_idx}_package"
                 else:
-                    # ex: "Core 0", "Core 14"
                     core_match = re.search(r"core\s*(\d+)", lower)
                     if core_match:
                         self.temp_label_map[label] = f"cpu{socket_idx}_core_{core_match.group(1)}"
                     else:
                         self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
-            elif "k10temp" in chip.lower() or "zenpower" in chip.lower():
-                # AMD: socket sequencial
+
+            elif re.match(r"k10temp|zenpower", chip.lower()):
                 socket_idx = chip_to_socket_k10.get(chip, 0)
                 if "tctl" in lower or "tdie" in lower:
                     self.temp_label_map[label] = f"cpu{socket_idx}_package"
@@ -747,11 +709,12 @@ class SensorServer:
                     self.temp_label_map[label] = f"cpu{socket_idx}_core_{cid}"
                 else:
                     self.temp_label_map[label] = f"cpu{socket_idx}_{sensor_name.lower().replace(' ', '_')}"
-            elif "amdgpu" in chip.lower() or "radeon" in chip.lower() or "nouveau" in chip.lower():
+
+            elif re.match(r"amdgpu|radeon|nouveau", chip.lower()):
                 self.temp_label_map[label] = "gpu"
             elif "nvme" in chip.lower():
                 self.temp_label_map[label] = f"nvme_{chip}"
-            elif "nct" in chip.lower() or "it87" in chip.lower() or "w83" in chip.lower():
+            elif re.match(r"nct|it87|w83", chip.lower()):
                 if "systin" in lower or "system" in lower:
                     self.temp_label_map[label] = "board"
                 elif "cputin" in lower:
