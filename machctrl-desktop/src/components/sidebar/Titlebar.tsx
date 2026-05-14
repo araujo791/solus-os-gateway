@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Minus, Square, X, Maximize2 } from 'lucide-react'
+import { Minus, Square, X, Maximize2, Sun, Moon } from 'lucide-react'
+import type { Theme } from '../../hooks/useTheme'
 
 interface TitlebarProps {
-  title?: string
   connected?: boolean
+  theme: Theme
+  onToggleTheme: () => void
 }
 
-export function Titlebar({ title = 'MachCtrl', connected = false }: TitlebarProps) {
+export function Titlebar({ connected = false, theme, onToggleTheme }: TitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false)
 
   useEffect(() => {
@@ -14,41 +16,47 @@ export function Titlebar({ title = 'MachCtrl', connected = false }: TitlebarProp
   }, [])
 
   return (
-    <div className="drag-region flex h-11 items-center justify-between px-4 flex-shrink-0"
-         style={{ background: 'hsl(var(--bg))' }}>
-      {/* Left: logo + title */}
-      <div className="no-drag flex items-center gap-2.5">
-        <div className="flex h-6 w-6 items-center justify-center rounded-lg"
-             style={{ background: 'linear-gradient(135deg, hsl(217 100% 62%), hsl(262 80% 65%))' }}>
-          <span style={{ fontSize: 12, fontWeight: 800, color: 'white' }}>M</span>
+    <div className="drag-region" style={{
+      display: 'flex', height: 44, alignItems: 'center',
+      justifyContent: 'space-between', padding: '0 12px', flexShrink: 0,
+      background: 'hsl(var(--bg))',
+      borderBottom: '1px solid hsl(var(--border))',
+    }}>
+      {/* Left: logo */}
+      <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'linear-gradient(135deg, hsl(217 100% 62%), hsl(262 80% 65%))',
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 900, color: 'white' }}>M</span>
         </div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--text))' }}>{title}</span>
-        <span style={{
-          fontSize: 10, fontWeight: 500,
-          padding: '2px 6px', borderRadius: 6,
-          background: 'hsl(var(--border))',
-          color: 'hsl(var(--muted))',
-          letterSpacing: '0.05em',
-        }}>v2.0</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'hsl(var(--text))' }}>MachCtrl</span>
+        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 5, background: 'hsl(var(--border))', color: 'hsl(var(--muted))' }}>v2.0</span>
       </div>
 
-      {/* Center: connection status */}
-      <div className="flex items-center gap-1.5">
-        <div className="h-1.5 w-1.5 rounded-full"
-             style={{ background: connected ? 'hsl(var(--green))' : 'hsl(var(--red))',
-                      boxShadow: connected ? '0 0 6px hsl(152 100% 47% / 0.8)' : 'none' }} />
+      {/* Center: status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{
+          width: 7, height: 7, borderRadius: '50%',
+          background: connected ? 'hsl(var(--green))' : 'hsl(var(--red))',
+          boxShadow: connected ? '0 0 6px hsl(var(--green) / 0.8)' : 'none',
+        }} />
         <span style={{ fontSize: 11, color: 'hsl(var(--muted))' }}>
           {connected ? 'Conectado' : 'Desconectado'}
         </span>
       </div>
 
-      {/* Right: window controls */}
-      <div className="no-drag flex items-center gap-1">
+      {/* Right: theme toggle + window controls */}
+      <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        {/* Tema */}
+        <WinBtn onClick={onToggleTheme} color="hsl(var(--muted))" hoverColor="hsl(var(--accent))">
+          {theme === 'dark' ? <Sun size={12} /> : <Moon size={12} />}
+        </WinBtn>
+        <div style={{ width: 1, height: 16, background: 'hsl(var(--border))', margin: '0 4px' }} />
         <WinBtn onClick={() => window.electron?.minimize()} color="hsl(var(--muted))" hoverColor="#febc2e">
           <Minus size={10} />
         </WinBtn>
-        <WinBtn onClick={() => window.electron?.maximize().then(() => setIsMaximized(m => !m))}
-                color="hsl(var(--muted))" hoverColor="#28c840">
+        <WinBtn onClick={() => window.electron?.maximize().then(() => setIsMaximized(m => !m))} color="hsl(var(--muted))" hoverColor="#28c840">
           {isMaximized ? <Square size={9} /> : <Maximize2 size={9} />}
         </WinBtn>
         <WinBtn onClick={() => window.electron?.close()} color="hsl(var(--muted))" hoverColor="#ff5f57">
@@ -63,14 +71,12 @@ function WinBtn({ onClick, color, hoverColor, children }: any) {
   const [hovered, setHovered] = useState(false)
   return (
     <button onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       style={{
+        width: 28, height: 28, borderRadius: 7, border: 'none', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        width: 28, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
         background: hovered ? `${hoverColor}22` : 'transparent',
-        color: hovered ? hoverColor : color,
-        transition: 'all 0.15s ease',
+        color: hovered ? hoverColor : color, transition: 'all 0.15s',
       }}>
       {children}
     </button>

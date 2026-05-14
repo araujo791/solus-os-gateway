@@ -392,7 +392,31 @@ def get_memory_info():
     return info
 
 
-def get_system_info():
+def get_gpu_name():
+    """Detecta o nome da GPU via lspci."""
+    try:
+        r = subprocess.run(["lspci"], capture_output=True, text=True, timeout=4)
+        for line in r.stdout.splitlines():
+            lower = line.lower()
+            if any(k in lower for k in ("vga", "3d controller", "display controller")):
+                # Remove o endereço PCI e extrai o nome
+                parts = line.split(":", 2)
+                name = parts[-1].strip() if len(parts) >= 2 else line
+                # Remove prefixos comuns
+                for prefix in ("Advanced Micro Devices, Inc. [AMD/ATI]",
+                               "NVIDIA Corporation", "Intel Corporation",
+                               "Advanced Micro Devices, Inc."):
+                    name = name.replace(prefix, "").strip()
+                # Remove sufixo de revisão "(rev XX)"
+                name = re.sub(r"\s*\(rev [0-9a-f]+\)\s*", "", name).strip()
+                return name
+    except Exception:
+        pass
+    # Fallback: nome do hwmon amdgpu/nouveau
+    return ""
+
+
+
     info = {"hostname": "", "kernel": "", "os": "", "uptime": "", "board": "Desconhecida"}
     try:
         info["hostname"] = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
@@ -466,6 +490,10 @@ def get_system_info():
         info["board"] = " ".join(parts) if parts else "Desconhecida"
     except PermissionError:
         info["board"] = "Desconhecida (precisa de root)"
+
+    # GPU
+    info["gpu_name"] = get_gpu_name()
+
     try:
         uptime_seconds = time.time() - psutil.boot_time()
         hours = int(uptime_seconds // 3600)
@@ -474,6 +502,23 @@ def get_system_info():
     except Exception:
         info["uptime"] = "N/A"
     return info
+
+
+def get_disk_type(device: str) -> str:
+    """Detecta o tipo de disco: nvme, ssd ou hdd."""
+    dev = device.replace("/dev/", "").rstrip("0123456789").rstrip("p")
+    # NVMe
+    if "nvme" in dev.lower():
+        return "nvme"
+    # Verifica rotacional via /sys
+    rotational_path = f"/sys/block/{dev}/queue/rotational"
+    if os.path.exists(rotational_path):
+        try:
+            with open(rotational_path) as f:
+                return "hdd" if f.read().strip() == "1" else "ssd"
+        except Exception:
+            pass
+    return "ssd"
 
 
 def get_disk_info():
@@ -500,6 +545,7 @@ def get_disk_info():
             "used_gb": round(usage.used / (1024**3), 1),
             "free_gb": round(usage.free / (1024**3), 1),
             "usage_percent": round(usage.percent, 1),
+            "disk_type": get_disk_type(part.device),
         })
 
     # I/O por disco
@@ -936,8 +982,21 @@ class SensorServer:
             if os.path.exists(pwm_path):
                 pwm_val = read_sensor_file(pwm_path)
             speed_pct = round(pwm_val / 255 * 100) if pwm_val is not None else 0
+
+            # Cria nome amigável
+            chip = label.split("/")[0] if "/" in label else label
+            fan_label = label.split("/")[1] if "/" in label else label
+            if "amdgpu" in chip.lower() or "radeon" in chip.lower():
+                gpu_name = self.system_info.get("gpu_name", "") if hasattr(self, "system_info") else ""
+                friendly = f"{gpu_name or 'GPU'} — Fan"
+            elif "nct" in chip.lower() or "it87" in chip.lower():
+                friendly = f"Fan {fan_label.replace('Fan ', '').strip()}"
+            else:
+                friendly = label
+
             fan_list.append({
-                "label": label,
+                "label": friendly,
+                "name": label,
                 "rpm": rpm or 0,
                 "speed_percent": speed_pct,
                 "has_pwm": os.path.exists(pwm_path),

@@ -5,129 +5,159 @@ import type { SensorData } from '../../hooks/useSensorData'
 
 interface DisksPanelProps { data: SensorData }
 
-export function DisksPanel({ data: rawData }: DisksPanelProps) {
-  // Normaliza — backend envia disks.partitions[] ou disks[]
-  const disks = normalizeDisks(rawData)
+// Ícone por tipo de disco
+function DiskIcon({ type, color }: { type: string; color: string }) {
+  if (type === 'nvme') return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="1" y="5" width="18" height="10" rx="2" stroke={color} strokeWidth="1.5" />
+      <rect x="3" y="7" width="3" height="2" rx="0.5" fill={color} />
+      <rect x="7" y="7" width="3" height="2" rx="0.5" fill={color} />
+      <rect x="11" y="7" width="3" height="2" rx="0.5" fill={color} />
+      <rect x="3" y="11" width="14" height="1" rx="0.5" fill={color} opacity="0.4" />
+    </svg>
+  )
+  if (type === 'ssd') return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="2" y="3" width="16" height="14" rx="2" stroke={color} strokeWidth="1.5" />
+      <rect x="4" y="5" width="5" height="4" rx="0.5" fill={color} opacity="0.6" />
+      <rect x="4" y="11" width="12" height="1" rx="0.5" fill={color} opacity="0.4" />
+      <rect x="4" y="13" width="8" height="1" rx="0.5" fill={color} opacity="0.3" />
+    </svg>
+  )
+  // HDD
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="2" y="4" width="16" height="12" rx="2" stroke={color} strokeWidth="1.5" />
+      <circle cx="10" cy="10" r="3" stroke={color} strokeWidth="1.2" />
+      <circle cx="10" cy="10" r="1" fill={color} />
+      <rect x="14" y="7" width="2" height="1" rx="0.5" fill={color} opacity="0.5" />
+      <rect x="14" y="9" width="2" height="1" rx="0.5" fill={color} opacity="0.5" />
+    </svg>
+  )
+}
+
+function DiskTypeBadge({ type }: { type: string }) {
+  const labels: Record<string, { label: string; color: string }> = {
+    nvme: { label: 'NVMe', color: 'hsl(217 100% 62%)' },
+    ssd:  { label: 'SSD',  color: 'hsl(152 100% 47%)' },
+    hdd:  { label: 'HDD',  color: 'hsl(35 100% 55%)' },
+  }
+  const meta = labels[type] ?? labels.ssd
+  return (
+    <span style={{
+      fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
+      padding: '2px 6px', borderRadius: 4,
+      background: `${meta.color}22`,
+      color: meta.color,
+      border: `1px solid ${meta.color}44`,
+    }}>
+      {meta.label}
+    </span>
+  )
+}
+
+export function normalizeDisks(data: any) {
+  const raw = data?.disks
+  if (!raw) return []
+  const partitions = Array.isArray(raw) ? raw : (raw.partitions ?? [])
+  const ioRates = raw.io_rates ?? {}
+  return (partitions as any[]).map((p: any) => {
+    const devKey = (p.device ?? '').replace('/dev/', '')
+    const io = ioRates[devKey] ?? ioRates[p.device] ?? {}
+    return {
+      device:    p.device    ?? '',
+      mount:     p.mountpoint ?? p.mount ?? p.device ?? '',
+      fstype:    p.fstype    ?? '',
+      total_gb:  p.total_gb  ?? 0,
+      used_gb:   p.used_gb   ?? 0,
+      usage:     p.usage_percent ?? p.usage ?? 0,
+      read_mb:   io.read_mb  ?? p.read_mb  ?? 0,
+      write_mb:  io.write_mb ?? p.write_mb ?? 0,
+      disk_type: p.disk_type ?? 'ssd',
+    }
+  })
+}
+
+export function DisksPanel({ data }: DisksPanelProps) {
+  const disks  = normalizeDisks(data)
   const ioRef  = useRef<Record<string, { read: number[]; write: number[] }>>({})
 
   useEffect(() => {
     disks.forEach(d => {
-      const key = d.device
-      if (!ioRef.current[key]) ioRef.current[key] = { read: [], write: [] }
-      ioRef.current[key].read  = [...(ioRef.current[key].read.slice(-59)),  d.read_mb  ?? 0]
-      ioRef.current[key].write = [...(ioRef.current[key].write.slice(-59)), d.write_mb ?? 0]
+      if (!ioRef.current[d.device]) ioRef.current[d.device] = { read: [], write: [] }
+      ioRef.current[d.device].read  = [...ioRef.current[d.device].read.slice(-59),  d.read_mb]
+      ioRef.current[d.device].write = [...ioRef.current[d.device].write.slice(-59), d.write_mb]
     })
   })
 
-  if (!disks.length) return <Empty text="Nenhum disco detectado" />
+  if (!disks.length) return (
+    <div style={{ textAlign: 'center', padding: 48, color: 'hsl(var(--muted))' }}>Nenhum disco detectado</div>
+  )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', height: '100%' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, overflowY: 'auto', height: '100%', alignContent: 'start' }}>
       {disks.map((disk, i) => {
         const pct   = disk.usage
         const color = pct > 85 ? 'hsl(var(--red))' : pct > 65 ? 'hsl(var(--orange))' : 'hsl(var(--accent))'
         const io    = ioRef.current[disk.device] ?? { read: [], write: [] }
-        const free  = disk.total_gb - disk.used_gb
 
         return (
-          <div key={i} style={{ padding: '16px 18px', borderRadius: 14, background: 'hsl(var(--surface))', border: '1px solid hsl(var(--border))' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}1a`, border: `1px solid ${color}44` }}>
-                <HardDrive size={18} color={color} />
+          <div key={i} style={{ padding: '16px 18px', borderRadius: 16, background: 'hsl(var(--surface))', border: '1px solid hsl(var(--border))' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}1a`, border: `1px solid ${color}44` }}>
+                <DiskIcon type={disk.disk_type} color={color} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'hsl(var(--text))' }}>{disk.mount}</div>
-                    <div style={{ fontSize: 11, color: 'hsl(var(--muted))', marginTop: 1 }}>{disk.device} · {disk.fstype}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'JetBrains Mono', color, lineHeight: 1 }}>{pct}%</div>
-                    <div style={{ fontSize: 11, color: 'hsl(var(--muted))' }}>{disk.used_gb.toFixed(1)} / {disk.total_gb.toFixed(1)} GB</div>
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <DiskTypeBadge type={disk.disk_type} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'hsl(var(--text))', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {disk.mount}
+                  </span>
                 </div>
-                <div style={{ marginTop: 8, height: 6, borderRadius: 3, background: 'hsl(var(--border))' }}>
-                  <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: color, transition: 'width 0.6s ease', boxShadow: pct > 65 ? `0 0 12px ${color}66` : 'none' }} />
+                <div style={{ fontSize: 10, color: 'hsl(var(--muted))' }}>
+                  {disk.device} · {disk.fstype}
                 </div>
-                <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
-                  <Chip label="Livre"   value={`${free.toFixed(1)} GB`} />
-                  <Chip label="Leitura" value={`${(disk.read_mb ?? 0).toFixed(1)} MB/s`} color="hsl(var(--green))" />
-                  <Chip label="Escrita" value={`${(disk.write_mb ?? 0).toFixed(1)} MB/s`} color="hsl(var(--orange))" />
-                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'JetBrains Mono', color }}>{pct}%</div>
+                <div style={{ fontSize: 10, color: 'hsl(var(--muted))' }}>{disk.used_gb.toFixed(1)}/{disk.total_gb.toFixed(1)} GB</div>
               </div>
             </div>
-            {(io.read.length > 2 || io.write.length > 2) && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 4 }}>
-                <div>
-                  <div style={{ fontSize: 10, color: 'hsl(var(--muted))', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <ArrowDown size={10} color="hsl(var(--green))" /> Leitura
-                  </div>
-                  <Sparkline data={io.read} height={32} color="hsl(var(--green))" />
+
+            {/* Barra uso */}
+            <div style={{ height: 5, borderRadius: 3, background: 'hsl(var(--border))', marginBottom: 12 }}>
+              <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: color, transition: 'width 0.6s ease' }} />
+            </div>
+
+            {/* I/O sparklines empilhados */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'hsl(var(--muted))', marginBottom: 2 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <ArrowDown size={9} color="hsl(var(--green))" /> Leitura
+                  </span>
+                  <span style={{ fontFamily: 'JetBrains Mono', color: 'hsl(var(--green))' }}>
+                    {disk.read_mb.toFixed(1)} MB/s
+                  </span>
                 </div>
-                <div>
-                  <div style={{ fontSize: 10, color: 'hsl(var(--muted))', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <ArrowUp size={10} color="hsl(var(--orange))" /> Escrita
-                  </div>
-                  <Sparkline data={io.write} height={32} color="hsl(var(--orange))" />
-                </div>
+                <Sparkline data={io.read} height={28} color="hsl(var(--green))" />
               </div>
-            )}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'hsl(var(--muted))', marginBottom: 2 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <ArrowUp size={9} color="hsl(var(--orange))" /> Escrita
+                  </span>
+                  <span style={{ fontFamily: 'JetBrains Mono', color: 'hsl(var(--orange))' }}>
+                    {disk.write_mb.toFixed(1)} MB/s
+                  </span>
+                </div>
+                <Sparkline data={io.write} height={28} color="hsl(var(--orange))" />
+              </div>
+            </div>
           </div>
         )
       })}
     </div>
   )
-}
-
-// Normaliza qualquer formato que o backend envie
-export function normalizeDisks(data: any): Array<{
-  device: string; mount: string; fstype: string
-  total_gb: number; used_gb: number; usage: number
-  read_mb: number; write_mb: number
-}> {
-  const raw = data?.disks
-  if (!raw) return []
-
-  // Formato novo: { partitions: [], io_rates: {} }
-  if (raw.partitions) {
-    return raw.partitions.map((p: any) => ({
-      device:   p.device   ?? '',
-      mount:    p.mountpoint ?? p.mount ?? p.device ?? '',
-      fstype:   p.fstype   ?? '',
-      total_gb: p.total_gb ?? 0,
-      used_gb:  p.used_gb  ?? 0,
-      usage:    p.usage_percent ?? p.usage ?? 0,
-      read_mb:  (raw.io_rates?.[p.device?.replace('/dev/', '')] ?? raw.io_rates?.[p.device] ?? {}).read_mb  ?? 0,
-      write_mb: (raw.io_rates?.[p.device?.replace('/dev/', '')] ?? raw.io_rates?.[p.device] ?? {}).write_mb ?? 0,
-    }))
-  }
-
-  // Formato array direto
-  if (Array.isArray(raw)) {
-    return raw.map((p: any) => ({
-      device:   p.device   ?? '',
-      mount:    p.mountpoint ?? p.mount ?? '',
-      fstype:   p.fstype   ?? '',
-      total_gb: p.total_gb ?? 0,
-      used_gb:  p.used_gb  ?? 0,
-      usage:    p.usage_percent ?? p.usage ?? 0,
-      read_mb:  p.read_mb  ?? 0,
-      write_mb: p.write_mb ?? 0,
-    }))
-  }
-
-  return []
-}
-
-function Chip({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, background: 'hsl(var(--glass))', border: '1px solid hsl(var(--border))' }}>
-      <span style={{ color: 'hsl(var(--muted))' }}>{label} </span>
-      <span style={{ fontWeight: 600, fontFamily: 'JetBrains Mono', color: color ?? 'hsl(var(--text))' }}>{value}</span>
-    </div>
-  )
-}
-
-function Empty({ text }: { text: string }) {
-  return <div style={{ textAlign: 'center', padding: 48, color: 'hsl(var(--muted))', fontSize: 13 }}>{text}</div>
 }

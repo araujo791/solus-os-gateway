@@ -48,6 +48,8 @@ export interface SensorData {
     label: string
     rpm: number
     pwm_pct: number
+    speed_percent?: number
+    has_pwm?: boolean
     mode: string
   }>
   gpu?: {

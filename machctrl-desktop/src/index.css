@@ -4,27 +4,34 @@
 @tailwind utilities;
 
 :root {
-  /* ── Core palette (Sensei-inspired) ── */
-  --bg:      224 20% 6%;        /* #0a0c14 — fundo principal */
-  --surface: 224 18% 10%;       /* cards */
-  --glass:   224 18% 13%;       /* glass cards */
-  --border:  224 15% 16%;       /* bordas sutis */
-  --text:    214 25% 92%;       /* texto principal */
-  --muted:   214 12% 52%;       /* texto secundário */
-
-  /* ── Accent colors ── */
-  --accent:  217 100% 62%;      /* azul Sensei */
-  --green:   152 100% 47%;      /* verde saúde */
+  /* ── Core palette dark (Sensei-inspired) ── */
+  --bg:      224 20% 6%;
+  --surface: 224 18% 10%;
+  --glass:   224 18% 13%;
+  --border:  224 15% 16%;
+  --text:    214 25% 92%;
+  --muted:   214 12% 52%;
+  --accent:  217 100% 62%;
+  --green:   152 100% 47%;
   --blue:    217 100% 62%;
   --purple:  262  80% 65%;
   --orange:   32 100% 58%;
   --red:       0  85% 58%;
+}
 
-  /* ── Glow ── */
-  --glow-accent:  0 0 24px hsl(217 100% 62% / 0.35);
-  --glow-green:   0 0 24px hsl(152 100% 47% / 0.35);
-  --glow-red:     0 0 24px hsl(  0  85% 58% / 0.35);
-  --glow-orange:  0 0 24px hsl( 32 100% 58% / 0.35);
+[data-theme="light"] {
+  --bg:      220 20% 97%;
+  --surface: 220 20% 100%;
+  --glass:   220 20% 96%;
+  --border:  220 15% 88%;
+  --text:    220 25% 12%;
+  --muted:   220 12% 48%;
+  --accent:  217 100% 50%;
+  --green:   152 100% 35%;
+  --blue:    217 100% 50%;
+  --purple:  262  80% 55%;
+  --orange:   32 100% 45%;
+  --red:       0  85% 48%;
 }
 
 /* ── Base reset ── */

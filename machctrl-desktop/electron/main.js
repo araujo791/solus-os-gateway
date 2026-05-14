@@ -130,6 +130,30 @@ ipcMain.handle('window-close',      () => mainWindow?.close())
 ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
 ipcMain.handle('get-platform',      () => ({ platform: process.platform, arch: process.arch, hostname: os.hostname(), release: os.release() }))
 ipcMain.handle('open-external',     (_, url) => shell.openExternal(url))
+
+ipcMain.handle('set-autostart', (_, enable) => {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: enable,
+      openAsHidden: true,  // inicia em segundo plano sem janela
+    })
+    // Fallback para Linux via .desktop em autostart
+    if (process.platform === 'linux') {
+      const autostartDir = require('path').join(require('os').homedir(), '.config', 'autostart')
+      const desktopFile  = require('path').join(autostartDir, 'machctrl.desktop')
+      require('fs').mkdirSync(autostartDir, { recursive: true })
+      if (enable) {
+        require('fs').writeFileSync(desktopFile,
+          '[Desktop Entry]\nType=Application\nName=MachCtrl\nExec=/usr/local/bin/machctrl\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n')
+      } else {
+        try { require('fs').unlinkSync(desktopFile) } catch { /* ok */ }
+      }
+    }
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e.message }
+  }
+})
 ipcMain.handle('restart-backend',   async () => {
   if (backendProcess) { backendProcess.kill(); backendProcess = null }
   await new Promise(r => setTimeout(r, 600))

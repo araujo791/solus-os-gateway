@@ -100,7 +100,7 @@ export function OverviewPanel({ data, cpuHistory, tempHistory }: OverviewProps) 
       {disks.length > 0 && (
         <Section title="Discos">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {disks.map((d, i) => {
+            {disks.map((d: any, i: number) => {
               const c = colorPct(d.usage)
               return (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 12, background: 'hsl(var(--surface))', border: '1px solid hsl(var(--border))' }}>
