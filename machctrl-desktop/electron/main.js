@@ -150,7 +150,7 @@ ipcMain.handle('set-autostart', (_, enable) => {
       }
     }
     return { ok: true }
-  } catch (e: any) {
+  } catch (e) {
     return { ok: false, error: e.message }
   }
 })
