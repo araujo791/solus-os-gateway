@@ -1216,6 +1216,7 @@ class SensorServer:
         while True:
             if self.clients:
                 data = self.read_all_sensors()
+                data["type"] = "sensors_update"
                 message = json.dumps(data)
                 dead_clients = set()
                 for client in self.clients:
