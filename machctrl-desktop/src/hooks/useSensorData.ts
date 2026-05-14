@@ -59,11 +59,15 @@ export interface SensorData {
     power_w: number
     fan_rpm: number
   }
-  power_profile: {
+  // Backend pode enviar como power_profile{} ou campos soltos
+  power_profile?: {
     current: string
     available: string[]
     current_governor: string
   }
+  current_profile?: string
+  available_profiles?: string[]
+  current_governor?: string
   system: {
     hostname: string
     kernel: string
@@ -101,8 +105,10 @@ export function useSensorData(url = 'ws://localhost:8765') {
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data)
-        if (msg.type === 'sensors') {
-          const d: SensorData = msg.data
+        // Backend envia 'initial_data' no primeiro envio e 'sensors_update' nas atualizações
+        if (msg.type === 'sensors' || msg.type === 'initial_data' || msg.type === 'sensors_update') {
+          // Dados podem estar em msg.data ou direto em msg
+          const d: SensorData = msg.data ?? msg
           setData(d)
           setHistory(h => [...h.slice(-(HISTORY_LEN-1)), d.cpu?.usage ?? 0])
           setTempHistory(h => [...h.slice(-(HISTORY_LEN-1)), d.cpus_temps?.[0]?.package ?? d.temperatures?.cpu ?? 0])

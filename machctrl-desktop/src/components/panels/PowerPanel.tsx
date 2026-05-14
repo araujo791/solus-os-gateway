@@ -19,12 +19,14 @@ interface PowerPanelProps {
 }
 
 export function PowerPanel({ data, onCommand }: PowerPanelProps) {
-  const pp = data.power_profile
-  const activeCanon = canonicalize(pp?.current ?? 'balanced')
-  const available = pp?.available ?? []
+  // Backend pode enviar como power_profile{} ou campos soltos
+  const current   = data.power_profile?.current   ?? data.current_profile   ?? 'balanced'
+  const available = data.power_profile?.available  ?? data.available_profiles ?? []
+  const governor  = data.power_profile?.current_governor ?? data.current_governor ?? ''
+  const activeCanon = canonicalize(current)
 
   const handleSelect = (p: typeof PROFILES[0]) => {
-    const raw = available.find(a => p.raw.includes(a)) ?? p.raw[p.raw.length - 1]
+    const raw = available.find((a: string) => p.raw.includes(a)) ?? p.raw[p.raw.length - 1]
     onCommand({ type: 'set_profile', profile: raw })
   }
 
@@ -32,7 +34,7 @@ export function PowerPanel({ data, onCommand }: PowerPanelProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ fontSize: 11, color: 'hsl(var(--muted))', marginBottom: 4 }}>
         Governador atual: <span style={{ color: 'hsl(var(--text))', fontFamily: 'JetBrains Mono' }}>
-          {pp?.current_governor ?? pp?.current ?? '—'}
+          {governor || current}
         </span>
       </div>
 
