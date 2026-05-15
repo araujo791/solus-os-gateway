@@ -705,8 +705,80 @@ class SensorServer:
         self.prev_disk_time = None
         # Fan name mapping: sequential index -> pwm key
         self.fan_index_map = {}  # "fan1" -> "chip_pwm1", etc.
+        self.fan_modes  = {}    # fan_id -> "auto"|"manual"|"max"
+        self.fan_speeds = {}    # fan_id -> 0-100
+        self.config_path = "/etc/machctrl/settings.json"
 
         self.detect_hardware()
+        self._load_settings()   # aplica configurações salvas após detectar hardware
+
+    def _load_settings(self):
+        """Carrega e aplica configurações salvas (perfil de energia + modos de fan)."""
+        import json as _json
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path) as f:
+                    cfg = _json.load(f)
+                # Aplica perfil de energia salvo
+                saved_profile = cfg.get("power_profile", "")
+                if saved_profile and saved_profile in self.available_profiles:
+                    import asyncio as _asyncio
+                    # Aplica sincronicamente via subprocess direto
+                    self._apply_profile_sync(saved_profile)
+                    self.current_profile = saved_profile
+                    print(f"⚙️  Perfil restaurado: {saved_profile}")
+                # Restaura modos de fan
+                self.fan_modes  = cfg.get("fan_modes",  {})
+                self.fan_speeds = cfg.get("fan_speeds", {})
+                # Aplica modos de fan
+                for fan_id, mode in self.fan_modes.items():
+                    pwm_name = self.fan_index_map.get(fan_id, fan_id)
+                    if pwm_name in self.pwm_controls:
+                        info = self.pwm_controls[pwm_name]
+                        if mode == "auto":
+                            set_fan_auto(info.get("pwm_enable"))
+                        elif mode in ("manual", "max"):
+                            speed = self.fan_speeds.get(fan_id, 100) if mode == "manual" else 100
+                            set_fan_speed(info["pwm"], info.get("pwm_enable"), speed)
+                print(f"⚙️  Configurações carregadas de {self.config_path}")
+        except Exception as e:
+            print(f"⚠️  Configurações não carregadas: {e}")
+
+    def _save_settings(self):
+        """Salva configurações atuais em disco."""
+        import json as _json
+        try:
+            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+            cfg = {
+                "power_profile": self.current_profile,
+                "fan_modes":     self.fan_modes,
+                "fan_speeds":    self.fan_speeds,
+            }
+            with open(self.config_path, "w") as f:
+                _json.dump(cfg, f, indent=2)
+        except Exception as e:
+            print(f"⚠️  Não foi possível salvar configurações: {e}")
+
+    def _apply_profile_sync(self, profile_name: str):
+        """Aplica perfil de energia sincronicamente (para restauração no boot)."""
+        try:
+            gov_map = {
+                "silent":      "powersave",
+                "balanced":    next((g for g in ("schedutil", "ondemand", "powersave") if g in self.available_governors), "powersave"),
+                "performance": "performance",
+            }
+            governor = gov_map.get(profile_name, "schedutil")
+            cpu_count = __import__("psutil").cpu_count(logical=True) or 1
+            for i in range(cpu_count):
+                gov_path = f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_governor"
+                if os.path.exists(gov_path):
+                    try:
+                        with open(gov_path, "w") as f:
+                            f.write(governor)
+                    except PermissionError:
+                        pass
+        except Exception as e:
+            print(f"⚠️  Erro ao aplicar perfil sync: {e}")
 
     def _classify_temp_sensors(self):
         # Mapeia chips coretemp / coretemp_1 / coretemp_2 → socket 0, 1, 2...
@@ -1005,12 +1077,29 @@ class SensorServer:
             else:
                 friendly = label
 
+            # Encontra o fan_id (ex: "fan1") que o backend usa para controle
+            fan_id = ""
+            for fid, fname in self.fan_index_map.items():
+                # pwm_controls[fname]["input"] deve corresponder ao info["input"]
+                pwm_ctrl = self.pwm_controls.get(fname, {})
+                if pwm_ctrl.get("input") == info.get("input"):
+                    fan_id = fid
+                    break
+            # Fallback: mapeia pelo label
+            if not fan_id:
+                for fid, fname in self.fan_index_map.items():
+                    if label in fname or fname in label:
+                        fan_id = fid
+                        break
+
             fan_list.append({
                 "label": friendly,
-                "name": label,
+                "name": fan_id or label,   # usa fan_id para comandos
+                "label_full": label,
                 "rpm": rpm or 0,
                 "speed_percent": speed_pct,
                 "has_pwm": os.path.exists(pwm_path),
+                "mode": self.fan_modes.get(fan_id or label, "auto"),
             })
 
         # CPU
@@ -1147,6 +1236,10 @@ class SensorServer:
             if pwm_name in self.pwm_controls:
                 info = self.pwm_controls[pwm_name]
                 success = set_fan_speed(info["pwm"], info.get("pwm_enable"), speed)
+                if success:
+                    self.fan_modes[fan_key]  = "manual" if speed < 100 else "max"
+                    self.fan_speeds[fan_key] = speed
+                    self._save_settings()
                 await websocket.send(json.dumps({
                     "type": "command_result",
                     "action": "set_fan_speed",
@@ -1166,6 +1259,10 @@ class SensorServer:
             if pwm_name in self.pwm_controls:
                 info = self.pwm_controls[pwm_name]
                 success = set_fan_auto(info.get("pwm_enable"))
+                if success:
+                    self.fan_modes[fan_key] = "auto"
+                    self.fan_speeds.pop(fan_key, None)
+                    self._save_settings()
                 await websocket.send(json.dumps({
                     "type": "command_result",
                     "action": "set_fan_auto",
@@ -1253,6 +1350,7 @@ class SensorServer:
                                     pass
 
                 self.current_profile = profile_name
+                self._save_settings()   # persiste em /etc/machctrl/settings.json
                 print(f"✅ Perfil '{profile_name}' aplicado: governor={applied_governor}")
 
                 # Persiste o perfil após reboot via /etc/default/cpupower (se disponível)
