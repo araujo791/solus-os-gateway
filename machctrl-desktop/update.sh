@@ -1,53 +1,59 @@
 #!/bin/bash
-# MachCtrl — Script de atualização rápida
+# MachCtrl — Atualiza, desinstala o antigo e instala o novo AppImage
 set -e
 
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+GREEN='\033[0;32m'; BLUE='\033[0;34m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
-echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   MachCtrl — Atualizando...          ║${NC}"
-echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+echo -e "${BLUE}╔══════════════════════════════════════╗"
+echo -e "║   MachCtrl — Atualização Completa    ║"
+echo -e "╚══════════════════════════════════════╝${NC}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 1. Puxa código novo
-echo -e "\n${YELLOW}[1/5]${NC} Baixando atualizações do GitHub..."
-git pull origin main
-
-# 2. Para o app
-echo -e "\n${YELLOW}[2/5]${NC} Parando MachCtrl..."
-pkill -f MachCtrl 2>/dev/null || true
-sleep 1
-
-# 3. Atualiza backend (não precisa rebuild)
-echo -e "\n${YELLOW}[3/5]${NC} Atualizando backend..."
-sudo cp backend/machctrl_server.py /opt/machctrl/backend/
-sudo systemctl restart machctrl-backend
-echo -e "   ${GREEN}✓${NC} Backend atualizado"
-
-# 4. Rebuild do frontend
-echo -e "\n${YELLOW}[4/5]${NC} Compilando interface (pode demorar ~1 min)..."
-npm run build:appimage 2>&1 | grep -E "(built|error|AppImage|✓|✗|Error)" || true
-
-# 5. Instala novo AppImage
-echo -e "\n${YELLOW}[5/5]${NC} Instalando novo AppImage..."
-APPIMAGE=$(find dist-electron -name '*.AppImage' 2>/dev/null | head -1)
-if [ -n "$APPIMAGE" ]; then
-    sudo cp "$APPIMAGE" /opt/machctrl/MachCtrl.AppImage
-    echo -e "   ${GREEN}✓${NC} AppImage instalado: $APPIMAGE"
-else
-    echo -e "   ✗ AppImage não encontrado — verifique erros acima"
-    exit 1
+# Precisa de root para instalar
+if [[ $EUID -ne 0 ]]; then
+  echo -e "${RED}Execute como root: sudo bash update.sh${NC}"; exit 1
 fi
 
-echo -e "\n${GREEN}╔══════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║  ✅  MachCtrl atualizado!             ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
-echo -e "\nAbrindo MachCtrl...\n"
+# 1. Git pull
+echo -e "\n${YELLOW}[1/6]${NC} Baixando atualizações..."
+sudo -u "${SUDO_USER:-$USER}" git pull origin main 2>&1 | tail -3
 
-# Abre o app
-machctrl &
+# 2. Para e REMOVE o antigo
+echo -e "\n${YELLOW}[2/6]${NC} Removendo versão antiga..."
+pkill -f MachCtrl 2>/dev/null || true
+pkill -f machctrl 2>/dev/null || true
+sleep 1
+rm -f /opt/machctrl/MachCtrl.AppImage
+echo -e "   ${GREEN}✓${NC} AppImage antigo removido"
+
+# 3. Atualiza backend
+echo -e "\n${YELLOW}[3/6]${NC} Atualizando backend..."
+cp backend/machctrl_server.py /opt/machctrl/backend/
+systemctl restart machctrl-backend
+sleep 1
+STATUS=$(systemctl is-active machctrl-backend)
+echo -e "   ${GREEN}✓${NC} Backend: $STATUS"
+
+# 4. Rebuild
+echo -e "\n${YELLOW}[4/6]${NC} Compilando interface (~1 min)..."
+sudo -u "${SUDO_USER:-$USER}" npm run build:appimage 2>&1 | grep -E "(built|error|AppImage|Error|✓)" || true
+
+# 5. Instala novo AppImage
+echo -e "\n${YELLOW}[5/6]${NC} Instalando novo AppImage..."
+APPIMAGE=$(find dist-electron -name '*.AppImage' 2>/dev/null | head -1)
+if [[ -z "$APPIMAGE" ]]; then
+  echo -e "   ${RED}✗ AppImage não encontrado — verifique erros acima${NC}"; exit 1
+fi
+cp "$APPIMAGE" /opt/machctrl/MachCtrl.AppImage
+chmod +x /opt/machctrl/MachCtrl.AppImage
+echo -e "   ${GREEN}✓${NC} Instalado: /opt/machctrl/MachCtrl.AppImage"
+
+# 6. Abre
+echo -e "\n${YELLOW}[6/6]${NC} Abrindo MachCtrl..."
+sudo -u "${SUDO_USER:-$USER}" /usr/local/bin/machctrl &
+
+echo -e "\n${GREEN}╔══════════════════════════════════════╗"
+echo -e "║  ✅  MachCtrl atualizado com sucesso! ║"
+echo -e "╚══════════════════════════════════════╝${NC}\n"
