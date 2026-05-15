@@ -883,32 +883,41 @@ class SensorServer:
             entry = cpus_temps[sock]
             thread_usages_map = sock_thread_usages.get(sock, {})
             thread_freqs_map = sock_thread_freqs.get(sock, {})
-            # Map core_id -> average usage of its threads
-            # We approximate: core N has threads [N*2, N*2+1] for HT, or just thread N for non-HT
-            core_usage_map = {}
-            if thread_usages_map:
-                thread_ids = sorted(thread_usages_map.keys())
-                core_ids = sorted(entry["cores"].keys())
-                # Assign threads to cores in order
-                threads_per_core = max(1, len(thread_ids) // max(1, len(core_ids)))
-                for ci, cid in enumerate(core_ids):
-                    start = ci * threads_per_core
-                    end = start + threads_per_core
-                    relevant = [thread_usages_map[t] for t in thread_ids[start:end] if t in thread_usages_map]
-                    core_usage_map[cid] = round(sum(relevant) / len(relevant), 1) if relevant else 0
 
-            cores_sorted = [
-                {
-                    "id": cid,
-                    "temp": entry["cores"][cid],
-                    "usage": core_usage_map.get(cid, 0),
-                }
-                for cid in sorted(entry["cores"].keys())
-            ]
+            thread_ids = sorted(thread_usages_map.keys())
+            core_ids   = sorted(entry["cores"].keys())
+            threads_per_core = max(1, len(thread_ids) // max(1, len(core_ids))) if core_ids else 1
+
+            # Mapa core_id -> temperatura do sensor
+            core_temp_map = dict(entry["cores"])
+
+            # Para cada thread lógico, calcula usage e estima temp
+            all_threads = []
+            for ti, tid in enumerate(thread_ids):
+                # Descobre qual core físico este thread pertence
+                core_idx = ti // threads_per_core if threads_per_core > 0 else ti
+                phys_core_id = core_ids[core_idx] if core_idx < len(core_ids) else (core_ids[-1] if core_ids else 0)
+                temp = core_temp_map.get(phys_core_id, entry["package"])
+                usage = thread_usages_map.get(tid, 0)
+                all_threads.append({
+                    "id": tid,
+                    "core": phys_core_id,
+                    "temp": temp,
+                    "usage": round(usage, 1),
+                    "is_ht": (ti % threads_per_core) != 0,
+                })
+
+            # Fallback: se não há thread_usages, usa só os cores com sensor
+            if not all_threads:
+                all_threads = [
+                    {"id": cid, "core": cid, "temp": entry["cores"][cid], "usage": 0, "is_ht": False}
+                    for cid in core_ids
+                ]
+
             cpus_temps_list.append({
                 "socket": sock,
                 "package": entry["package"],
-                "cores": cores_sorted,
+                "cores": all_threads,   # agora inclui TODOS os threads lógicos
             })
 
         # Compatibilidade: cpu/gpu/board agregados

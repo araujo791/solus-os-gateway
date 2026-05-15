@@ -8,8 +8,10 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  assetsInclude: ['**/*.png', '**/*.jpg', '**/*.svg', '**/*.gif'],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    assetsDir: 'assets',
   },
 })

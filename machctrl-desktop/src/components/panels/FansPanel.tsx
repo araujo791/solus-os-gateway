@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import fanIconUrl from '../../assets/fan-icon.png'
 import type { SensorData } from '../../hooks/useSensorData'
 
 interface FansPanelProps {
@@ -7,37 +8,37 @@ interface FansPanelProps {
 }
 
 export function FansPanel({ data, onCommand }: FansPanelProps) {
-  // Filtra fans sem RPM (desligados / não existentes)
-  const fans = (data.fans ?? []).filter(f => f.rpm > 0 || f.has_pwm)
-
+  const fans = (data.fans ?? []).filter((f: any) => (f.rpm ?? 0) > 0 || f.has_pwm)
   if (!fans.length) return (
     <div style={{ textAlign: 'center', padding: 48, color: 'hsl(var(--muted))' }}>
       Nenhum ventilador ativo detectado
     </div>
   )
-
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, overflowY: 'auto', height: '100%', alignContent: 'start' }}>
-      {fans.map((fan, i) => <FanCard key={i} fan={fan} onCommand={onCommand} />)}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, overflowY: 'auto', height: '100%', alignContent: 'start' }}>
+      {fans.map((fan: any, i: number) => <FanCard key={i} fan={fan} onCommand={onCommand} />)}
     </div>
   )
 }
 
 function FanCard({ fan, onCommand }: { fan: any; onCommand: (c: object) => void }) {
-  const pct = fan.speed_percent ?? fan.pwm_pct ?? 0
-  const rpm = fan.rpm ?? 0
+  const pct  = fan.speed_percent ?? fan.pwm_pct ?? 0
+  const rpm  = fan.rpm ?? 0
   const [mode, setMode] = useState<'auto' | 'manual' | 'max'>(fan.mode ?? 'auto')
+  const [manualPct, setManualPct] = useState(pct || 50)
+  const [feedback, setFeedback]   = useState('')
   const angleRef = useRef(0)
   const rafRef   = useRef<number>()
-  const svgRef   = useRef<SVGGElement>(null)
+  const imgRef   = useRef<HTMLImageElement>(null)
 
-  // Animação da ventoinha proporcional ao RPM
+  // Animação da ventoinha — gira o PNG das hélices
   useEffect(() => {
-    const speed = rpm > 0 ? Math.max(0.3, rpm / 800) : 0
+    // Velocidade: 0 RPM = parado, 1000 RPM = ~1 volta/s, 3000+ = rápido
+    const degPerFrame = rpm > 0 ? Math.max(0.5, rpm / 400) : 0
     const animate = () => {
-      if (svgRef.current) {
-        angleRef.current = (angleRef.current + speed) % 360
-        svgRef.current.setAttribute('transform', `rotate(${angleRef.current}, 20, 20)`)
+      if (imgRef.current && degPerFrame > 0) {
+        angleRef.current = (angleRef.current + degPerFrame) % 360
+        imgRef.current.style.transform = `rotate(${angleRef.current}deg)`
       }
       rafRef.current = requestAnimationFrame(animate)
     }
@@ -45,46 +46,54 @@ function FanCard({ fan, onCommand }: { fan: any; onCommand: (c: object) => void 
     return () => cancelAnimationFrame(rafRef.current!)
   }, [rpm])
 
-  const handleMode = (m: 'auto' | 'manual' | 'max') => {
+  const sendCmd = (m: 'auto' | 'manual' | 'max', speedOverride?: number) => {
+    const speed = speedOverride ?? manualPct
     setMode(m)
-    if (m === 'auto')   onCommand({ type: 'set_fan_auto',  fan: fan.name })
-    if (m === 'max')    onCommand({ type: 'set_fan_speed', fan: fan.name, speed: 100 })
-    if (m === 'manual') onCommand({ type: 'set_fan_speed', fan: fan.name, speed: pct })
+    if (m === 'auto') {
+      // Backend espera "action" não "type"
+      onCommand({ action: 'set_fan_auto', fan: fan.name })
+      setFeedback('Automático')
+    } else if (m === 'max') {
+      onCommand({ action: 'set_fan_speed', fan: fan.name, speed: 100 })
+      setFeedback('Máximo 100%')
+    } else {
+      onCommand({ action: 'set_fan_speed', fan: fan.name, speed })
+      setFeedback(`Manual ${speed}%`)
+    }
+    setTimeout(() => setFeedback(''), 2500)
   }
 
   const color = rpm > 3000 ? 'hsl(var(--orange))' : rpm > 0 ? 'hsl(var(--accent))' : 'hsl(var(--muted))'
 
   return (
     <div style={{
-      padding: '16px 18px', borderRadius: 16,
+      padding: '18px 18px', borderRadius: 16,
       background: 'hsl(var(--surface))',
       border: '1px solid hsl(var(--border))',
-      display: 'flex', flexDirection: 'column', gap: 12,
+      display: 'flex', flexDirection: 'column', gap: 14,
     }}>
-      {/* Header */}
+      {/* Header: ícone animado + info + RPM */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        {/* Ícone animado de ventoinha */}
+        {/* Fan PNG animado */}
         <div style={{
-          width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-          background: rpm > 0 ? 'hsl(var(--accent) / 0.1)' : 'hsl(var(--border))',
-          border: `1px solid ${rpm > 0 ? 'hsl(var(--accent) / 0.3)' : 'hsl(var(--border))'}`,
+          width: 60, height: 60, borderRadius: 14, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: rpm > 0 ? 'hsl(var(--accent) / 0.08)' : 'hsl(var(--border) / 0.4)',
+          border: `1px solid ${rpm > 0 ? 'hsl(var(--accent) / 0.25)' : 'hsl(var(--border))'}`,
+          overflow: 'hidden',
+          position: 'relative',
         }}>
-          <svg width="40" height="40" viewBox="0 0 40 40">
-            <g ref={svgRef}>
-              {/* Pás da ventoinha */}
-              {[0, 60, 120, 180, 240, 300].map(angle => (
-                <path
-                  key={angle}
-                  d="M20,20 Q22,14 26,12 Q24,18 20,20"
-                  fill={color}
-                  opacity={0.85}
-                  transform={`rotate(${angle}, 20, 20)`}
-                />
-              ))}
-              <circle cx="20" cy="20" r="3" fill={color} />
-            </g>
-          </svg>
+          <img
+            ref={imgRef}
+            src={fanIconUrl}
+            alt="fan"
+            style={{
+              width: 52, height: 52,
+              objectFit: 'contain',
+              willChange: 'transform',
+              transition: rpm === 0 ? 'transform 0.5s ease' : 'none',
+            }}
+          />
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -92,12 +101,15 @@ function FanCard({ fan, onCommand }: { fan: any; onCommand: (c: object) => void 
             {fan.label}
           </div>
           <div style={{ fontSize: 10, color: 'hsl(var(--muted))', marginTop: 1 }}>
-            modo <span style={{ color: 'hsl(var(--accent))' }}>{mode}</span>
+            modo: <span style={{ color: mode === 'auto' ? 'hsl(var(--green))' : mode === 'max' ? 'hsl(var(--orange))' : 'hsl(var(--accent))' }}>
+              {mode === 'auto' ? 'Automático' : mode === 'max' ? 'Máximo' : 'Manual'}
+            </span>
+            {feedback && <span style={{ color: 'hsl(var(--green))', marginLeft: 8 }}>✓ {feedback}</span>}
           </div>
         </div>
 
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: 24, fontWeight: 900, fontFamily: 'JetBrains Mono', color, lineHeight: 1 }}>
+          <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'JetBrains Mono', color, lineHeight: 1 }}>
             {rpm.toLocaleString()}
           </div>
           <div style={{ fontSize: 10, color: 'hsl(var(--muted))' }}>RPM</div>
@@ -108,27 +120,47 @@ function FanCard({ fan, onCommand }: { fan: any; onCommand: (c: object) => void 
       {fan.has_pwm && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'hsl(var(--muted))', marginBottom: 4 }}>
-            <span>PWM</span><span style={{ fontFamily: 'JetBrains Mono' }}>{pct}%</span>
+            <span>PWM</span>
+            <span style={{ fontFamily: 'JetBrains Mono', color: 'hsl(var(--text))' }}>{pct}%</span>
           </div>
           <div style={{ height: 5, borderRadius: 3, background: 'hsl(var(--border))' }}>
-            <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`,
+            <div style={{
+              height: '100%', borderRadius: 3, width: `${pct}%`,
               background: `linear-gradient(90deg, hsl(var(--accent)), ${pct > 75 ? 'hsl(var(--orange))' : 'hsl(var(--accent))'})`,
-              transition: 'width 0.5s ease' }} />
+              transition: 'width 0.5s ease',
+            }} />
           </div>
         </div>
       )}
 
-      {/* Mode buttons */}
+      {/* Slider manual */}
+      {mode === 'manual' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'hsl(var(--muted))', marginBottom: 4 }}>
+            <span>Velocidade manual</span>
+            <span style={{ fontFamily: 'JetBrains Mono', color: 'hsl(var(--accent))' }}>{manualPct}%</span>
+          </div>
+          <input
+            type="range" min={20} max={100} step={5} value={manualPct}
+            onChange={e => setManualPct(Number(e.target.value))}
+            onMouseUp={e => sendCmd('manual', Number((e.target as HTMLInputElement).value))}
+            onTouchEnd={e => sendCmd('manual', Number((e.target as HTMLInputElement).value))}
+            style={{ width: '100%', accentColor: 'hsl(var(--accent))' }}
+          />
+        </div>
+      )}
+
+      {/* Botões de modo */}
       <div style={{ display: 'flex', gap: 6 }}>
         {(['auto', 'manual', 'max'] as const).map(m => (
-          <button key={m} onClick={() => handleMode(m)} style={{
-            flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+          <button key={m} onClick={() => sendCmd(m)} style={{
+            flex: 1, padding: '7px 0', borderRadius: 9, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             border: `1px solid ${mode === m ? 'hsl(var(--accent) / 0.5)' : 'hsl(var(--border))'}`,
             background: mode === m ? 'hsl(var(--accent) / 0.12)' : 'transparent',
             color: mode === m ? 'hsl(var(--accent))' : 'hsl(var(--muted))',
             transition: 'all 0.15s',
           }}>
-            {m === 'auto' ? 'Automático' : m === 'manual' ? 'Manual' : 'Máximo'}
+            {m === 'auto' ? 'Auto' : m === 'manual' ? 'Manual' : 'Máximo'}
           </button>
         ))}
       </div>
