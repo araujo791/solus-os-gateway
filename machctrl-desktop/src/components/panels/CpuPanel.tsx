@@ -100,43 +100,51 @@ export function CpuPanel({ data, cpuHistory }: CpuPanelProps) {
 function CoreGrid({ cores, pkgTemp }: { cores: SensorData['cpus_temps'][0]['cores']; pkgTemp: number }) {
   return (
     <div style={{
-      display: 'flex', flexWrap: 'wrap',
-      gap: '6px 4px', alignItems: 'flex-end',
+      display: 'flex',
+      flexWrap: 'nowrap',
+      gap: 3,
+      alignItems: 'flex-end',
+      width: '100%',
+      height: 140,   // altura fixa generosa — barras preenchem tudo
+      overflowX: 'auto',
+      overflowY: 'hidden',
+      paddingBottom: 2,
     }}>
       {cores.map((core) => {
         const usage   = Math.min(core.usage ?? 0, 100)
         const temp    = Math.min(core.temp  ?? pkgTemp, 105)
-        const usagePct = usage / 100
-        const tempPct  = temp  / 105
-        const BAR_H    = 90
+        const BAR_H   = 100   // altura máxima das barras em px
 
-        const usageH = Math.max(2, usagePct * BAR_H)
-        const tempH  = Math.max(2, tempPct  * BAR_H)
+        const usageH  = Math.max(3, (usage / 100) * BAR_H)
+        const tempH   = Math.max(3, (temp  / 105) * BAR_H)
 
         const tempColor  = temp  > 85 ? 'hsl(var(--red))' : temp  > 70 ? 'hsl(var(--orange))' : 'hsl(32 100% 58%)'
         const usageColor = usage > 85 ? 'hsl(var(--red))' : 'hsl(var(--accent))'
 
         return (
-          <div key={core.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flex: '0 0 auto' }}>
+          <div key={core.id} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            flex: '1 1 0', minWidth: 18, maxWidth: 40,
+          }}>
             {/* Temp acima */}
-            <div style={{ fontSize: 8, fontFamily: 'JetBrains Mono', color: tempColor, lineHeight: 1 }}>
+            <div style={{ fontSize: 8, fontFamily: 'JetBrains Mono', color: tempColor, lineHeight: 1, whiteSpace: 'nowrap' }}>
               {Math.round(temp)}°
             </div>
 
-            {/* Duas barras lado a lado */}
-            <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: BAR_H }}>
+            {/* Duas barras */}
+            <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: BAR_H, width: '100%' }}>
               {/* Atividade (azul) */}
-              <div style={{ width: 9, height: BAR_H, display: 'flex', alignItems: 'flex-end', background: 'hsl(var(--border))', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ flex: 1, height: BAR_H, display: 'flex', alignItems: 'flex-end', background: 'hsl(var(--border))', borderRadius: 3, overflow: 'hidden', minWidth: 5 }}>
                 <div style={{ width: '100%', height: `${usageH}px`, background: usageColor, borderRadius: 3, transition: 'height 0.5s cubic-bezier(0.4,0,0.2,1)' }} />
               </div>
               {/* Temperatura (laranja) */}
-              <div style={{ width: 9, height: BAR_H, display: 'flex', alignItems: 'flex-end', background: 'hsl(var(--border))', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ flex: 1, height: BAR_H, display: 'flex', alignItems: 'flex-end', background: 'hsl(var(--border))', borderRadius: 3, overflow: 'hidden', minWidth: 5 }}>
                 <div style={{ width: '100%', height: `${tempH}px`, background: tempColor, borderRadius: 3, transition: 'height 0.5s cubic-bezier(0.4,0,0.2,1)' }} />
               </div>
             </div>
 
-            {/* Uso abaixo */}
-            <div style={{ fontSize: 8, fontFamily: 'JetBrains Mono', color: usageColor, lineHeight: 1 }}>
+            {/* Uso % */}
+            <div style={{ fontSize: 8, fontFamily: 'JetBrains Mono', color: usageColor, lineHeight: 1, whiteSpace: 'nowrap' }}>
               {Math.round(usage)}%
             </div>
 

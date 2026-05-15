@@ -1246,6 +1246,23 @@ class SensorServer:
                 self.current_profile = profile_name
                 print(f"✅ Perfil '{profile_name}' aplicado: governor={applied_governor}")
 
+                # Persiste o perfil após reboot via /etc/default/cpupower (se disponível)
+                cpupower_conf = "/etc/default/cpupower"
+                if os.path.exists(cpupower_conf):
+                    try:
+                        with open(cpupower_conf, "r") as f:
+                            content = f.read()
+                        import re as _re
+                        content = _re.sub(
+                            r"^governor=.*$", f"governor='{applied_governor}'",
+                            content, flags=_re.MULTILINE
+                        )
+                        with open(cpupower_conf, "w") as f:
+                            f.write(content)
+                        print(f"   💾 Perfil persistido em {cpupower_conf}")
+                    except Exception as e:
+                        print(f"   ⚠  Não foi possível persistir perfil: {e}")
+
             except Exception as e:
                 print(f"Erro ao aplicar perfil {profile_name}: {e}")
                 success = False
