@@ -95,27 +95,24 @@ function FanCard({ fan, onCommand }: { fan: any; onCommand: (c: object) => void 
 
         {/* Fan blade PNG animado */}
         <div style={{
-          width: 64, height: 64, borderRadius: 50, flexShrink: 0,
+          width: 64, height: 64, borderRadius: '50%', flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: rpm > 0
-            ? `radial-gradient(circle, hsl(var(--accent) / 0.15), hsl(var(--bg)))`
+            ? 'radial-gradient(circle, hsl(var(--accent) / 0.12), hsl(var(--surface)))'
             : 'hsl(var(--border) / 0.3)',
-          border: `2px solid ${rpm > 0 ? 'hsl(var(--accent) / 0.3)' : 'hsl(var(--border))'}`,
-          boxShadow: rpm > 0 ? `0 0 16px hsl(var(--accent) / 0.2)` : 'none',
-          overflow: 'hidden',
+          border: `2px solid ${rpm > 0 ? 'hsl(var(--accent) / 0.35)' : 'hsl(var(--border))'}`,
+          boxShadow: rpm > 0 ? '0 0 14px hsl(var(--accent) / 0.25)' : 'none',
         }}>
           <img
             ref={imgRef}
             src={fanBladeUrl}
             alt="fan"
             style={{
-              width: 54, height: 54,
+              width: 52, height: 52,
               objectFit: 'contain',
               willChange: 'transform',
-              filter: rpm > 0
-                ? `brightness(1.1) drop-shadow(0 0 4px hsl(var(--accent) / 0.5))`
-                : 'brightness(0.4) grayscale(1)',
-              transition: rpm === 0 ? 'filter 0.5s ease' : 'none',
+              opacity: rpm > 0 ? 1 : 0.35,
+              transition: 'opacity 0.4s ease',
             }}
           />
         </div>
