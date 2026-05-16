@@ -123,14 +123,14 @@ export function OverviewPanel({ data, cpuHistory, tempHistory }: OverviewProps) 
               <RingGauge value={(data.gpu as any)?.usage ?? 0} size={88} thickness={8}
                 color={colorPct((data.gpu as any)?.usage ?? 0)} label="GPU" unit="%" />
               <div style={{ flex:1 }}>
-                <div style={{ marginBottom:8, minHeight:48, display:'flex', alignItems:'center' }}>
+                <div style={{ marginBottom:8, minHeight:56, display:'flex', alignItems:'center' }}>
                   {gpuBrand === 'nvidia' && (
                     <img src={nvidiaLogoUrl} alt="NVIDIA"
-                      style={{ height:44, objectFit:'contain', maxWidth:130 }} />
+                      style={{ height:56, objectFit:'contain', maxWidth:160 }} />
                   )}
                   {gpuBrand === 'amd' && (
                     <img src={amdRadeonUrl} alt="AMD Radeon"
-                      style={{ height:50, objectFit:'contain', maxWidth:130 }} />
+                      style={{ height:64, objectFit:'contain', maxWidth:160 }} />
                   )}
                   {gpuBrand === 'unknown' && (
                     <span style={{ fontSize:13, fontWeight:600, color:'hsl(var(--muted))' }}>GPU</span>
