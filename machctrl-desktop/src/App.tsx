@@ -95,8 +95,13 @@ function AboutPanel({ theme, onToggleTheme }: { theme: string; onToggleTheme: ()
 
   const handleDonate = () => {
     const email = 'anderson.henrique.araujo@hotmail.com'
-    const url = `https://www.paypal.com/donate/?business=${encodeURIComponent(email)}&currency_code=BRL`
-    window.electron?.openExternal(url)
+    const url = `https://www.paypal.com/donate/?business=${encodeURIComponent(email)}&currency_code=BRL&item_name=MachCtrl`
+    // Tenta electron shell, fallback para window.open
+    if (window.electron?.openExternal) {
+      window.electron.openExternal(url)
+    } else {
+      window.open(url, '_blank')
+    }
   }
 
   return (

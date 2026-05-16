@@ -590,25 +590,36 @@ def set_fan_speed(pwm_path, pwm_enable_path, speed_percent):
 
 
 def set_fan_auto(pwm_enable_path):
-    """Coloca fan em modo automático. Tenta valor 2 (auto), fallback para 0."""
+    """Coloca fan em modo automático. Tenta valor 2 (auto padrão), depois 0 (firmware)."""
     if not pwm_enable_path or not os.path.exists(pwm_enable_path):
         return False
     try:
-        # Tenta modo auto (2)
+        # Primeiro reseta o PWM para 255 (máximo) antes de auto
+        # Isso evita que o fan fique travado em velocidade baixa
+        pwm_path = pwm_enable_path.replace("_enable", "")
+        if os.path.exists(pwm_path):
+            try:
+                with open(pwm_path, "w") as f:
+                    f.write("255")
+            except Exception:
+                pass
+
+        # Tenta modo 2 (auto via hardware)
         with open(pwm_enable_path, "w") as f:
             f.write("2")
-        # Verifica se foi aceito
+        import time
+        time.sleep(0.05)
         with open(pwm_enable_path) as f:
             val = f.read().strip()
         if val == "2":
             return True
-        # Alguns chips (ex: amdgpu) aceitam só 0 (firmware) ou 1 (manual)
-        # 0 = firmware/auto para amdgpu
+
+        # Fallback: modo 0 (controle de firmware — amdgpu)
         with open(pwm_enable_path, "w") as f:
             f.write("0")
         return True
     except PermissionError:
-        print("ERRO: Sem permissão. Execute como root!")
+        print("ERRO set_fan_auto: sem permissão (root necessário)")
         return False
     except Exception as e:
         print(f"ERRO set_fan_auto: {e}")
@@ -892,6 +903,12 @@ class SensorServer:
         print(f"\n🌡️  Mapa de temperaturas:")
         for label, category in self.temp_label_map.items():
             print(f"   • {label} → {category}")
+
+        # Debug mapa de fans
+        print(f"\n🌀 Mapa de controle PWM (fan_id -> pwm_name -> paths):")
+        for fid, pwm_name in self.fan_index_map.items():
+            ctrl = self.pwm_controls.get(pwm_name, {})
+            print(f"   • {fid} -> {pwm_name}: pwm={ctrl.get('pwm','?')} enable={ctrl.get('pwm_enable','?')} fan_input={ctrl.get('fan_input','?')}")
 
         # Memória
         print("\n💾 Detectando slots de memória...")
