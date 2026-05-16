@@ -590,31 +590,19 @@ def set_fan_speed(pwm_path, pwm_enable_path, speed_percent):
 
 
 def set_fan_auto(pwm_enable_path):
-    """Coloca fan em modo automático. Tenta valor 2 (auto padrão), depois 0 (firmware)."""
+    """Coloca fan em modo automático via pwm_enable."""
     if not pwm_enable_path or not os.path.exists(pwm_enable_path):
         return False
     try:
-        # Primeiro reseta o PWM para 255 (máximo) antes de auto
-        # Isso evita que o fan fique travado em velocidade baixa
-        pwm_path = pwm_enable_path.replace("_enable", "")
-        if os.path.exists(pwm_path):
-            try:
-                with open(pwm_path, "w") as f:
-                    f.write("255")
-            except Exception:
-                pass
-
-        # Tenta modo 2 (auto via hardware)
+        # Tenta modo 2 (auto controlado pelo hardware/BIOS)
         with open(pwm_enable_path, "w") as f:
             f.write("2")
-        import time
-        time.sleep(0.05)
+        import time; time.sleep(0.05)
         with open(pwm_enable_path) as f:
             val = f.read().strip()
         if val == "2":
             return True
-
-        # Fallback: modo 0 (controle de firmware — amdgpu)
+        # Fallback: modo 0 (firmware) para chips como amdgpu
         with open(pwm_enable_path, "w") as f:
             f.write("0")
         return True
