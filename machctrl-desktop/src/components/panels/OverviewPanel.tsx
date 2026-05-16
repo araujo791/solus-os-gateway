@@ -122,23 +122,34 @@ export function OverviewPanel({ data, cpuHistory, tempHistory }: OverviewProps) 
             <div style={{ display:'flex', alignItems:'center', gap:14 }}>
               <RingGauge value={(data.gpu as any)?.usage ?? 0} size={88} thickness={8}
                 color={colorPct((data.gpu as any)?.usage ?? 0)} label="GPU" unit="%" />
-              <div style={{ flex:1 }}>
-                <div style={{ marginBottom:8, minHeight:56, display:'flex', alignItems:'center' }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                {/* Logo + Temp lado a lado */}
+                <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:8 }}>
                   {gpuBrand === 'nvidia' && (
                     <img src={nvidiaLogoUrl} alt="NVIDIA"
-                      style={{ height:56, objectFit:'contain', maxWidth:160 }} />
+                      style={{ height:68, objectFit:'contain', maxWidth:180, flexShrink:0 }} />
                   )}
                   {gpuBrand === 'amd' && (
                     <img src={amdRadeonUrl} alt="AMD Radeon"
-                      style={{ height:64, objectFit:'contain', maxWidth:160 }} />
+                      style={{ height:76, objectFit:'contain', maxWidth:180, flexShrink:0 }} />
                   )}
                   {gpuBrand === 'unknown' && (
-                    <span style={{ fontSize:13, fontWeight:600, color:'hsl(var(--muted))' }}>GPU</span>
+                    <span style={{ fontSize:14, fontWeight:700, color:'hsl(var(--muted))' }}>GPU</span>
                   )}
+                  {/* Temperatura junto ao logo */}
+                  <div>
+                    <div style={{ fontSize:10, color:'hsl(var(--muted))' }}>Temp</div>
+                    <div style={{ fontSize:22, fontWeight:800, fontFamily:'JetBrains Mono',
+                      color:colorTemp(gpuTemp), lineHeight:1 }}>
+                      {Math.round(gpuTemp)}°C
+                    </div>
+                  </div>
                 </div>
-                <Row label="Temp"  value={`${Math.round(gpuTemp)}°C`} color={colorTemp(gpuTemp)} />
                 {(data.gpu as any)?.vram_total_gb && (
                   <Row label="VRAM" value={`${(data.gpu as any).vram_used_gb?.toFixed(1)}/${(data.gpu as any).vram_total_gb?.toFixed(1)} GB`} />
+                )}
+                {(data.gpu as any)?.power_w != null && (
+                  <Row label="Potência" value={`${(data.gpu as any).power_w} W`} />
                 )}
               </div>
             </div>
