@@ -1087,61 +1087,66 @@ class SensorServer:
 
         # Fans - enviar com índice sequencial para o frontend
         fans = {}
-        # Mapa direto: fan_input_path -> (fan_id, pwm_name)
-        input_to_fanid = {}
+        # Mapa mais confiável: pwm_path -> (fan_id, ctrl)
+        pwmpath_to_fanid = {}
         for fid, pwm_name in self.fan_index_map.items():
             ctrl = self.pwm_controls.get(pwm_name, {})
-            inp = ctrl.get("fan_input", "")
-            if inp:
-                input_to_fanid[inp] = (fid, pwm_name)
+            pwm_p = ctrl.get("pwm", "")
+            if pwm_p:
+                pwmpath_to_fanid[pwm_p] = (fid, ctrl)
 
         fan_list = []
         for label, info in self.fan_sensors.items():
             rpm = read_sensor_file(info["input"])
-            # Encontra fan_id e pwm_name pelo fan_input path
-            match = input_to_fanid.get(info.get("input", ""))
-            if not match:
-                # Fallback: tenta derivar do hwmon path + idx
-                inp = info.get("input", "")
-                hwmon_dir = os.path.dirname(inp)
-                fan_m = re.search(r"fan(\d+)_input", inp)
-                if fan_m:
-                    chip_name_file = os.path.join(hwmon_dir, "name")
+
+            # Deriva o pwm_path do fan: mesmo hwmon dir, mesmo índice
+            inp = info.get("input", "")
+            hwmon_dir = os.path.dirname(inp)
+            fan_m = re.search(r"fan(\d+)_input$", inp)
+            fan_id = ""
+            pwm_path = ""
+            pwm_enable = None
+
+            if fan_m:
+                idx = fan_m.group(1)
+                derived_pwm = os.path.join(hwmon_dir, f"pwm{idx}")
+                derived_enable = os.path.join(hwmon_dir, f"pwm{idx}_enable")
+
+                # Busca no mapa por pwm_path
+                hit = pwmpath_to_fanid.get(derived_pwm)
+                if hit:
+                    fan_id = hit[0]
+                    pwm_path = derived_pwm
+                    pwm_enable = derived_enable if os.path.exists(derived_enable) else None
+                elif os.path.exists(derived_pwm):
+                    # PWM existe mas não está no fan_index_map (ex: amdgpu sem fan_input)
+                    pwm_path = derived_pwm
+                    pwm_enable = derived_enable if os.path.exists(derived_enable) else None
+                    # Tenta achar o fan_id pelo chip name
                     try:
-                        with open(chip_name_file) as f:
+                        with open(os.path.join(hwmon_dir, "name")) as f:
                             cname = f.read().strip()
-                        # Pode ter sufixo _1 por causa do find_hwmon_devices
-                        for suffix in ["", "_1", "_2"]:
-                            candidate_chip = cname + suffix
-                            pwm_key = f"{candidate_chip}_pwm{fan_m.group(1)}"
-                            if pwm_key in self.pwm_controls:
-                                for fid2, pname2 in self.fan_index_map.items():
-                                    if pname2 == pwm_key:
-                                        match = (fid2, pwm_key)
-                                        break
-                            if match:
+                        for fid2, pname2 in self.fan_index_map.items():
+                            if pname2 == f"{cname}_pwm{idx}":
+                                fan_id = fid2
                                 break
+                        if not fan_id:
+                            # Último recurso: usa label como fan_id
+                            fan_id = label
                     except Exception:
-                        pass
+                        fan_id = label
 
-            fan_id   = match[0] if match else ""
-            pwm_name_resolved = match[1] if match else ""
-            pwm_path = self.pwm_controls.get(pwm_name_resolved, {}).get("pwm", "")
-            pwm_enable = self.pwm_controls.get(pwm_name_resolved, {}).get("pwm_enable")
-
-            pwm_val = None
-            if pwm_path and os.path.exists(pwm_path):
-                pwm_val = read_sensor_file(pwm_path)
+            pwm_val = read_sensor_file(pwm_path) if pwm_path and os.path.exists(pwm_path) else None
             speed_pct = round(pwm_val / 255 * 100) if pwm_val is not None else 0
 
             # Nome amigável
             chip = label.split("/")[0] if "/" in label else label
-            fan_label = label.split("/")[1] if "/" in label else label
+            fan_label_part = label.split("/")[1] if "/" in label else label
             if re.match(r"amdgpu|radeon", chip.lower()):
                 gpu_name = self.system_info.get("gpu_name", "") if self.system_info else ""
                 friendly = f"{gpu_name or 'GPU'} — Fan"
             elif re.match(r"nct|it87|w83", chip.lower()):
-                friendly = f"Fan {fan_label.replace('Fan ', '').strip()}"
+                friendly = f"Fan {fan_label_part.replace('Fan ', '').strip()}"
             else:
                 friendly = f"{chip} Fan"
 
@@ -1279,50 +1284,64 @@ class SensorServer:
     async def handle_command(self, websocket, cmd):
         action = cmd.get("action")
 
+        def resolve_fan_ctrl(fan_key):
+            """Resolve fan_key -> (pwm_path, pwm_enable_path). Funciona para fan1..fanN e labels."""
+            # Tenta pelo fan_index_map primeiro
+            pwm_name = self.fan_index_map.get(fan_key)
+            if pwm_name and pwm_name in self.pwm_controls:
+                ctrl = self.pwm_controls[pwm_name]
+                return ctrl.get("pwm", ""), ctrl.get("pwm_enable")
+            # Tenta direto em pwm_controls (fan_key pode ser o pwm_name)
+            if fan_key in self.pwm_controls:
+                ctrl = self.pwm_controls[fan_key]
+                return ctrl.get("pwm", ""), ctrl.get("pwm_enable")
+            # Tenta derivar do label (ex: "amdgpu/Fan 1" -> hwmon2/pwm1)
+            for label, info in self.fan_sensors.items():
+                if label == fan_key or fan_key in label:
+                    inp = info.get("input", "")
+                    hwmon_dir = os.path.dirname(inp)
+                    m = re.search(r"fan(\d+)_input$", inp)
+                    if m:
+                        pwm_p = os.path.join(hwmon_dir, f"pwm{m.group(1)}")
+                        pwm_e = os.path.join(hwmon_dir, f"pwm{m.group(1)}_enable")
+                        if os.path.exists(pwm_p):
+                            return pwm_p, (pwm_e if os.path.exists(pwm_e) else None)
+            return "", None
+
         if action == "set_fan_speed":
             fan_key = cmd.get("fan", "")
-            speed = cmd.get("speed", 50)
+            speed   = cmd.get("speed", 50)
+            pwm_path, pwm_enable = resolve_fan_ctrl(fan_key)
 
-            # Resolve "fan1" -> real PWM name
-            pwm_name = self.fan_index_map.get(fan_key, fan_key)
-
-            if pwm_name in self.pwm_controls:
-                info = self.pwm_controls[pwm_name]
-                success = set_fan_speed(info["pwm"], info.get("pwm_enable"), speed)
+            if pwm_path:
+                success = set_fan_speed(pwm_path, pwm_enable, speed)
                 if success:
                     self.fan_modes[fan_key]  = "manual" if speed < 100 else "max"
                     self.fan_speeds[fan_key] = speed
                     self._save_settings()
                 await websocket.send(json.dumps({
-                    "type": "command_result",
-                    "action": "set_fan_speed",
-                    "success": success,
-                    "fan": fan_key,
-                    "speed": speed,
+                    "type": "command_result", "action": "set_fan_speed",
+                    "success": success, "fan": fan_key, "speed": speed,
                 }))
             else:
                 await websocket.send(json.dumps({
                     "type": "error",
-                    "message": f"Fan '{fan_key}' não encontrado. Map: {self.fan_index_map}. PWMs: {list(self.pwm_controls.keys())}"
+                    "message": f"Fan '{fan_key}' não encontrado. fan_index_map={self.fan_index_map}"
                 }))
 
         elif action == "set_fan_auto":
             fan_key = cmd.get("fan", "")
-            pwm_name = self.fan_index_map.get(fan_key, fan_key)
-            if pwm_name in self.pwm_controls:
-                info = self.pwm_controls[pwm_name]
-                success = set_fan_auto(info.get("pwm_enable"))
+            pwm_path, pwm_enable = resolve_fan_ctrl(fan_key)
+            if pwm_path:
+                success = set_fan_auto(pwm_enable)
                 if success:
-                    self.fan_modes[fan_key] = "auto"
+                    self.fan_modes.pop(fan_key, None)
                     self.fan_speeds.pop(fan_key, None)
                     self._save_settings()
                 await websocket.send(json.dumps({
-                    "type": "command_result",
-                    "action": "set_fan_auto",
-                    "success": success,
-                    "fan": fan_key,
+                    "type": "command_result", "action": "set_fan_auto",
+                    "success": success, "fan": fan_key,
                 }))
-
         elif action == "set_profile":
             profile_name = cmd.get("profile", "balanced")
             success = True
