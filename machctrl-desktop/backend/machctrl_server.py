@@ -1070,52 +1070,72 @@ class SensorServer:
 
         # Fans - enviar com índice sequencial para o frontend
         fans = {}
-        # Mapa reverso: input_path -> fan_id para lookup rápido
+        # Mapa direto: fan_input_path -> (fan_id, pwm_name)
         input_to_fanid = {}
         for fid, pwm_name in self.fan_index_map.items():
             ctrl = self.pwm_controls.get(pwm_name, {})
-            inp = ctrl.get("input", "")
+            inp = ctrl.get("fan_input", "")
             if inp:
-                input_to_fanid[inp] = fid
+                input_to_fanid[inp] = (fid, pwm_name)
 
         fan_list = []
         for label, info in self.fan_sensors.items():
             rpm = read_sensor_file(info["input"])
+            # Encontra fan_id e pwm_name pelo fan_input path
+            match = input_to_fanid.get(info.get("input", ""))
+            if not match:
+                # Fallback: tenta derivar do hwmon path + idx
+                inp = info.get("input", "")
+                hwmon_dir = os.path.dirname(inp)
+                fan_m = re.search(r"fan(\d+)_input", inp)
+                if fan_m:
+                    chip_name_file = os.path.join(hwmon_dir, "name")
+                    try:
+                        with open(chip_name_file) as f:
+                            cname = f.read().strip()
+                        # Pode ter sufixo _1 por causa do find_hwmon_devices
+                        for suffix in ["", "_1", "_2"]:
+                            candidate_chip = cname + suffix
+                            pwm_key = f"{candidate_chip}_pwm{fan_m.group(1)}"
+                            if pwm_key in self.pwm_controls:
+                                for fid2, pname2 in self.fan_index_map.items():
+                                    if pname2 == pwm_key:
+                                        match = (fid2, pwm_key)
+                                        break
+                            if match:
+                                break
+                    except Exception:
+                        pass
+
+            fan_id   = match[0] if match else ""
+            pwm_name_resolved = match[1] if match else ""
+            pwm_path = self.pwm_controls.get(pwm_name_resolved, {}).get("pwm", "")
+            pwm_enable = self.pwm_controls.get(pwm_name_resolved, {}).get("pwm_enable")
+
             pwm_val = None
-            pwm_path = info.get("pwm", "")
-            if os.path.exists(pwm_path):
+            if pwm_path and os.path.exists(pwm_path):
                 pwm_val = read_sensor_file(pwm_path)
             speed_pct = round(pwm_val / 255 * 100) if pwm_val is not None else 0
 
-            # Cria nome amigável
+            # Nome amigável
             chip = label.split("/")[0] if "/" in label else label
             fan_label = label.split("/")[1] if "/" in label else label
-            if "amdgpu" in chip.lower() or "radeon" in chip.lower():
+            if re.match(r"amdgpu|radeon", chip.lower()):
                 gpu_name = self.system_info.get("gpu_name", "") if self.system_info else ""
                 friendly = f"{gpu_name or 'GPU'} — Fan"
-            elif "nct" in chip.lower() or "it87" in chip.lower():
+            elif re.match(r"nct|it87|w83", chip.lower()):
                 friendly = f"Fan {fan_label.replace('Fan ', '').strip()}"
             else:
-                friendly = label
-
-            # Encontra fan_id pelo input path
-            fan_id = input_to_fanid.get(info.get("input", ""), "")
-            # Fallback: procura pelo pwm_path
-            if not fan_id:
-                for fid, pwm_name in self.fan_index_map.items():
-                    ctrl = self.pwm_controls.get(pwm_name, {})
-                    if ctrl.get("pwm") == pwm_path:
-                        fan_id = fid
-                        break
+                friendly = f"{chip} Fan"
 
             fan_list.append({
-                "label": friendly,
-                "name": fan_id or label,
-                "label_full": label,
-                "rpm": rpm or 0,
+                "label":         friendly,
+                "name":          fan_id or label,
+                "label_full":    label,
+                "rpm":           rpm or 0,
                 "speed_percent": speed_pct,
-                "has_pwm": os.path.exists(pwm_path),
-                "mode": self.fan_modes.get(fan_id or label, "auto"),
+                "has_pwm":       bool(pwm_path and os.path.exists(pwm_path)),
+                "mode":          self.fan_modes.get(fan_id or label, "auto"),
             })
 
         # CPU

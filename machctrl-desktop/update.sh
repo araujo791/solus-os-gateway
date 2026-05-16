@@ -28,9 +28,13 @@ sleep 1
 rm -f /opt/machctrl/MachCtrl.AppImage
 echo -e "   ${GREEN}✓${NC} AppImage antigo removido"
 
-# 3. Atualiza backend
-echo -e "\n${YELLOW}[3/6]${NC} Atualizando backend..."
+# 3. Atualiza backend + ícone
+echo -e "\n${YELLOW}[3/6]${NC} Atualizando backend e ícone..."
 cp backend/machctrl_server.py /opt/machctrl/backend/
+# Atualiza ícone no sistema
+cp src/assets/app-icon.png /usr/share/pixmaps/machctrl.png 2>/dev/null || true
+cp src/assets/app-icon.png /usr/share/icons/hicolor/256x256/apps/machctrl.png 2>/dev/null || true
+gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
 systemctl restart machctrl-backend
 sleep 1
 STATUS=$(systemctl is-active machctrl-backend)

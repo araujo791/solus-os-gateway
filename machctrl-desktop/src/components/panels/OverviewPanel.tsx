@@ -1,8 +1,10 @@
 import { RingGauge } from '../shared/RingGauge'
 import { Sparkline } from '../shared/Sparkline'
-import { HardDrive, Wind } from 'lucide-react'
+import { HardDrive } from 'lucide-react'
 import { normalizeDisks } from './DisksPanel'
 import type { SensorData } from '../../hooks/useSensorData'
+import nvidiaLogoUrl  from '../../assets/nvidia.png'
+import amdRadeonUrl   from '../../assets/amd-radeon.png'
 
 interface OverviewProps {
   data: SensorData
@@ -13,44 +15,39 @@ interface OverviewProps {
 function colorPct(v: number)  { return v > 85 ? 'hsl(var(--red))' : v > 65 ? 'hsl(var(--orange))' : 'hsl(var(--accent))' }
 function colorTemp(t: number) { return t > 85 ? 'hsl(var(--red))' : t > 70 ? 'hsl(var(--orange))' : 'hsl(var(--green))' }
 
-// ── Logos SVG dos fabricantes ─────────────────────────────────────────────────
-function IntelLogo({ size = 32 }: { size?: number }) {
+// ── Logos CPU inline SVG ──────────────────────────────────────────────────────
+function IntelLogo({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
-      <rect width="48" height="48" rx="8" fill="#0071C5" />
-      <text x="24" y="32" textAnchor="middle" fill="white" fontSize="18" fontWeight="900" fontFamily="Arial">intel</text>
+    <svg width={size * 1.6} height={size} viewBox="0 0 80 40" fill="none">
+      <rect width="80" height="40" rx="6" fill="#0071C5"/>
+      <text x="40" y="28" textAnchor="middle" fill="white" fontSize="20" fontWeight="900" fontFamily="Arial,sans-serif">intel</text>
     </svg>
   )
 }
-function AMDCpuLogo({ size = 32 }: { size?: number }) {
+function AMDCpuLogo({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
-      <rect width="48" height="48" rx="8" fill="#ED1C24" />
-      <text x="24" y="31" textAnchor="middle" fill="white" fontSize="14" fontWeight="900" fontFamily="Arial">AMD</text>
+    <svg width={size * 1.4} height={size} viewBox="0 0 70 40" fill="none">
+      <rect width="70" height="40" rx="6" fill="#ED1C24"/>
+      <text x="35" y="27" textAnchor="middle" fill="white" fontSize="18" fontWeight="900" fontFamily="Arial,sans-serif">AMD</text>
     </svg>
   )
 }
-function NvidiaLogo({ size = 40 }: { size?: number }) {
-  return (
-    <svg width={size} height={size * 0.56} viewBox="0 0 120 67" fill="none">
-      <path d="M22 12 L22 40 C22 40 32 42 42 34 L42 50 L54 50 L54 12 L42 12 L42 28 C36 33 28 32 28 26 L28 12 Z" fill="#76B900"/>
-      <text x="60" y="42" fill="#76B900" fontSize="26" fontWeight="900" fontFamily="Arial">NVIDIA</text>
-    </svg>
+
+// ── GPU logos: usa PNG reais ───────────────────────────────────────────────────
+function GpuLogo({ brand, height = 40 }: { brand: string; height?: number }) {
+  if (brand === 'nvidia') return (
+    <img src={nvidiaLogoUrl} alt="NVIDIA" style={{ height, objectFit:'contain', maxWidth: 120 }} />
   )
-}
-function AMDGpuLogo({ size = 40 }: { size?: number }) {
-  return (
-    <svg width={size} height={size * 0.5} viewBox="0 0 100 50" fill="none">
-      <text x="4" y="38" fill="#ED1C24" fontSize="32" fontWeight="900" fontFamily="Arial">AMD</text>
-      <text x="70" y="24" fill="#ED1C24" fontSize="12" fontWeight="700" fontFamily="Arial">Radeon</text>
-    </svg>
+  if (brand === 'amd') return (
+    <img src={amdRadeonUrl} alt="AMD Radeon" style={{ height, objectFit:'contain', maxWidth: 120 }} />
   )
+  return null
 }
 
 function detectCpuBrand(model: string) {
   const m = model.toLowerCase()
   if (m.includes('intel')) return 'intel'
-  if (m.includes('amd') || m.includes('ryzen') || m.includes('epyc') || m.includes('threadripper')) return 'amd'
+  if (m.includes('amd') || m.includes('ryzen') || m.includes('epyc')) return 'amd'
   return 'unknown'
 }
 function detectGpuBrand(name: string) {
@@ -126,9 +123,8 @@ export function OverviewPanel({ data, cpuHistory, tempHistory }: OverviewProps) 
               <RingGauge value={(data.gpu as any)?.usage ?? 0} size={88} thickness={8}
                 color={colorPct((data.gpu as any)?.usage ?? 0)} label="GPU" unit="%" />
               <div style={{ flex:1 }}>
-                <div style={{ marginBottom:6 }}>
-                  {gpuBrand === 'nvidia' && <NvidiaLogo size={48} />}
-                  {gpuBrand === 'amd'    && <AMDGpuLogo size={48} />}
+                <div style={{ marginBottom:6, minHeight:40, display:'flex', alignItems:'center' }}>
+                  <GpuLogo brand={gpuBrand} height={38} />
                   {gpuBrand === 'unknown' && <div style={{ fontSize:11, color:'hsl(var(--muted))' }}>GPU</div>}
                 </div>
                 <Row label="Temp"  value={`${Math.round(gpuTemp)}°C`} color={colorTemp(gpuTemp)} />

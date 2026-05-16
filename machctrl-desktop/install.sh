@@ -134,12 +134,19 @@ sensors-detect --auto 2>/dev/null | tail -2 || warn "Configure sensores manualme
 
 # ── 6. Menu .desktop ──────────────────────────────────────────────────────────
 step 6 "Entrada no menu"
+# Copia ícone para o sistema
+install -Dm644 "$SCRIPT_DIR/src/assets/app-icon.png" /usr/share/pixmaps/machctrl.png
+install -Dm644 "$SCRIPT_DIR/src/assets/app-icon.png" /usr/share/icons/hicolor/256x256/apps/machctrl.png
+gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+ok "Ícone instalado"
+
 cat > /usr/share/applications/machctrl.desktop << 'DESKTOP'
 [Desktop Entry]
 Name=MachCtrl
 GenericName=Monitor de Hardware
 Comment=Monitor e Otimizador de Hardware para Linux
 Exec=/usr/local/bin/machctrl
+Icon=machctrl
 Terminal=false
 Type=Application
 Categories=System;Monitor;
