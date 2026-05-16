@@ -9,13 +9,12 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 let mainWindow  = null
 let backendProcess = null
 
+// Log silencioso — não escreve em nada (evita EIO no AppImage)
 const log = {
-  info:  (...a) => { try { process.stdout.write('[MachCtrl] ' + a.join(' ') + '\n') } catch {} },
-  warn:  (...a) => { try { process.stderr.write('[MachCtrl:W] ' + a.join(' ') + '\n') } catch {} },
-  error: (...a) => { try { process.stderr.write('[MachCtrl:E] ' + a.join(' ') + '\n') } catch {} },
+  info:  () => {},
+  warn:  () => {},
+  error: () => {},
 }
-
-log.info('MachCtrl iniciando...')
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function isPortInUse(port) {
@@ -59,13 +58,10 @@ async function startBackend() {
   })
 
   backendProcess = spawn('/usr/bin/python3', [backendPath], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'ignore', 'ignore'],
     env,
     detached: false,
   })
-
-  backendProcess.stdout.on('data', d => { try { process.stdout.write('[backend] ' + d) } catch {} })
-  backendProcess.stderr.on('data', d => { try { process.stderr.write('[backend:err] ' + d) } catch {} })
 
   backendProcess.on('exit', (code, signal) => {
     log.warn('Backend saiu código', code, 'sinal', signal)
