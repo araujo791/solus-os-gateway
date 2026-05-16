@@ -1057,6 +1057,14 @@ class SensorServer:
 
         # Fans - enviar com índice sequencial para o frontend
         fans = {}
+        # Mapa reverso: input_path -> fan_id para lookup rápido
+        input_to_fanid = {}
+        for fid, pwm_name in self.fan_index_map.items():
+            ctrl = self.pwm_controls.get(pwm_name, {})
+            inp = ctrl.get("input", "")
+            if inp:
+                input_to_fanid[inp] = fid
+
         fan_list = []
         for label, info in self.fan_sensors.items():
             rpm = read_sensor_file(info["input"])
@@ -1070,31 +1078,26 @@ class SensorServer:
             chip = label.split("/")[0] if "/" in label else label
             fan_label = label.split("/")[1] if "/" in label else label
             if "amdgpu" in chip.lower() or "radeon" in chip.lower():
-                gpu_name = self.system_info.get("gpu_name", "") if hasattr(self, "system_info") else ""
+                gpu_name = self.system_info.get("gpu_name", "") if self.system_info else ""
                 friendly = f"{gpu_name or 'GPU'} — Fan"
             elif "nct" in chip.lower() or "it87" in chip.lower():
                 friendly = f"Fan {fan_label.replace('Fan ', '').strip()}"
             else:
                 friendly = label
 
-            # Encontra o fan_id (ex: "fan1") que o backend usa para controle
-            fan_id = ""
-            for fid, fname in self.fan_index_map.items():
-                # pwm_controls[fname]["input"] deve corresponder ao info["input"]
-                pwm_ctrl = self.pwm_controls.get(fname, {})
-                if pwm_ctrl.get("input") == info.get("input"):
-                    fan_id = fid
-                    break
-            # Fallback: mapeia pelo label
+            # Encontra fan_id pelo input path
+            fan_id = input_to_fanid.get(info.get("input", ""), "")
+            # Fallback: procura pelo pwm_path
             if not fan_id:
-                for fid, fname in self.fan_index_map.items():
-                    if label in fname or fname in label:
+                for fid, pwm_name in self.fan_index_map.items():
+                    ctrl = self.pwm_controls.get(pwm_name, {})
+                    if ctrl.get("pwm") == pwm_path:
                         fan_id = fid
                         break
 
             fan_list.append({
                 "label": friendly,
-                "name": fan_id or label,   # usa fan_id para comandos
+                "name": fan_id or label,
                 "label_full": label,
                 "rpm": rpm or 0,
                 "speed_percent": speed_pct,

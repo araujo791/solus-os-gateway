@@ -71,8 +71,8 @@ export function normalizeDisks(data: any) {
       total_gb:  p.total_gb  ?? 0,
       used_gb:   p.used_gb   ?? 0,
       usage:     p.usage_percent ?? p.usage ?? 0,
-      read_mb:   io.read_mb  ?? p.read_mb  ?? 0,
-      write_mb:  io.write_mb ?? p.write_mb ?? 0,
+      read_mb:   io.read_mb_s  ?? io.read_mb  ?? p.read_mb  ?? 0,
+      write_mb:  io.write_mb_s ?? io.write_mb ?? p.write_mb ?? 0,
       disk_type: p.disk_type ?? 'ssd',
     }
   })

@@ -12,7 +12,7 @@ const ITEMS: Array<{ id: Tab; icon: any; label: string; divider?: boolean }> = [
   { id: 'cpu',        icon: Cpu,         label: 'CPU' },
   { id: 'memory',     icon: MemoryStick, label: 'Memória' },
   { id: 'disks',      icon: HardDrive,   label: 'Discos' },
-  { id: 'fans',       icon: Wind,        label: 'Ventiladores' },
+  { id: 'fans',       icon: Wind,        label: 'Fans' },
   { id: 'power',      icon: Zap,         label: 'Energia', divider: true },
   { id: 'cleaner',    icon: Trash2,      label: 'Limpeza' },
   { id: 'benchmark',  icon: Gauge,       label: 'Benchmark' },

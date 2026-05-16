@@ -15,7 +15,7 @@ import { useState } from 'react'
 
 const PAGE_TITLES: Record<Tab, string> = {
   overview:'Visão Geral', cpu:'CPU', memory:'Memória', disks:'Discos',
-  fans:'Ventiladores', power:'Perfil de Energia', cleaner:'Limpeza',
+  fans:'Fans', power:'Perfil de Energia', cleaner:'Limpeza',
   benchmark:'Benchmark', about:'Sobre',
 }
 
@@ -92,30 +92,56 @@ function AboutPanel({ theme, onToggleTheme }: { theme: string; onToggleTheme: ()
     } catch { alert('Configure manualmente: copie machctrl.desktop para ~/.config/autostart/') }
   }
 
+  const handleDonate = () => {
+    const email = 'anderson.henrique.araujo@hotmail.com'
+    const url = `https://www.paypal.com/donate/?business=${encodeURIComponent(email)}&currency_code=BRL`
+    window.electron?.openExternal(url)
+  }
+
   return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:18 }}>
-      <div style={{ width:88, height:88, borderRadius:24, display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg, hsl(217 100% 62%), hsl(262 80% 65%))', boxShadow:'0 12px 40px hsl(217 100% 62% / 0.4)' }}>
-        <span style={{ fontSize:44, fontWeight:900, color:'white', lineHeight:1 }}>M</span>
-      </div>
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:20 }}>
+      <img
+        src="/src/assets/app-icon.png"
+        alt="MachCtrl"
+        style={{ width:100, height:100, borderRadius:24, objectFit:'contain',
+          boxShadow:'0 12px 40px hsl(217 100% 62% / 0.3)' }}
+        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+      />
       <div style={{ textAlign:'center' }}>
-        <div style={{ fontSize:24, fontWeight:800, color:'hsl(var(--text))' }}>MachCtrl</div>
+        <div style={{ fontSize:26, fontWeight:900, color:'hsl(var(--text))' }}>MachCtrl</div>
         <div style={{ fontSize:13, color:'hsl(var(--muted))', marginTop:4 }}>Monitor e Otimizador de Hardware para Linux</div>
-        <div style={{ display:'inline-flex', alignItems:'center', gap:8, marginTop:8, padding:'3px 12px', borderRadius:20, background:'hsl(var(--surface))', border:'1px solid hsl(var(--border))', fontSize:11, color:'hsl(var(--muted))' }}>
+        <div style={{ display:'inline-flex', alignItems:'center', gap:8, marginTop:8, padding:'3px 14px', borderRadius:20, background:'hsl(var(--surface))', border:'1px solid hsl(var(--border))', fontSize:11, color:'hsl(var(--muted))' }}>
           v2.0.0 · CachyOS / Arch · Electron + React
         </div>
       </div>
+
       <div style={{ display:'flex', gap:10, flexWrap:'wrap', justifyContent:'center' }}>
         <ActionBtn onClick={onToggleTheme} label={theme==='dark' ? '☀️  Tema Claro' : '🌙  Tema Escuro'} />
         <ActionBtn onClick={handleAutostart} label="🚀  Iniciar com o sistema" />
-        <ActionBtn onClick={() => window.electron?.openExternal('https://github.com/araujo791/solus-os-gateway')} label="⭐  GitHub" />
+        <ActionBtn
+          onClick={handleDonate}
+          label="💙  Apoiar via PayPal"
+          accent
+        />
+      </div>
+
+      <div style={{ fontSize:11, color:'hsl(var(--muted))', opacity:0.5, textAlign:'center', maxWidth:320 }}>
+        Se o MachCtrl te ajuda, considere apoiar o desenvolvimento ❤️
       </div>
     </div>
   )
 }
 
-function ActionBtn({ onClick, label }: { onClick: () => void; label: string }) {
+function ActionBtn({ onClick, label, accent }: { onClick: () => void; label: string; accent?: boolean }) {
   return (
-    <button onClick={onClick} style={{ fontSize:12, padding:'8px 20px', borderRadius:10, cursor:'pointer', border:'1px solid hsl(var(--border))', background:'hsl(var(--surface))', color:'hsl(var(--text))', transition:'all 0.15s' }}>
+    <button onClick={onClick} style={{
+      fontSize:12, padding:'9px 22px', borderRadius:10, cursor:'pointer',
+      border: accent ? '1px solid hsl(217 100% 62% / 0.5)' : '1px solid hsl(var(--border))',
+      background: accent ? 'hsl(217 100% 62% / 0.12)' : 'hsl(var(--surface))',
+      color: accent ? 'hsl(var(--accent))' : 'hsl(var(--text))',
+      fontWeight: accent ? 700 : 400,
+      transition:'all 0.15s',
+    }}>
       {label}
     </button>
   )

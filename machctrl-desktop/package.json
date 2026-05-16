@@ -37,6 +37,7 @@
     ],
     "linux": {
       "target": ["AppImage", "pacman"],
+      "icon": "src/assets/app-icon.png",
       "category": "System",
       "synopsis": "Monitor e Otimizador de Hardware",
       "description": "Monitor de hardware em tempo real — CPU, GPU, RAM, Discos, Benchmark, Limpeza"
