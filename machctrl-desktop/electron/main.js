@@ -1,25 +1,25 @@
 const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
-const log = require('electron-log')
-const os = require('os')
-const fs = require('fs')
-const net = require('net')
-
-// Permite WebSocket para localhost quando empacotado
-app.commandLine.appendSwitch('disable-features', 'BlockInsecurePrivateNetworkRequests')
-
-log.transports.file.level = false   // desativa log em arquivo (evita EIO quando root)
-log.transports.console.level = 'info'
-log.info('MachCtrl Desktop iniciando...')
+const os   = require('os')
+const fs   = require('fs')
+const net  = require('net')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
-let mainWindow = null
+let mainWindow  = null
 let backendProcess = null
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const log = {
+  info:  (...a) => { try { process.stdout.write('[MachCtrl] ' + a.join(' ') + '\n') } catch {} },
+  warn:  (...a) => { try { process.stderr.write('[MachCtrl:W] ' + a.join(' ') + '\n') } catch {} },
+  error: (...a) => { try { process.stderr.write('[MachCtrl:E] ' + a.join(' ') + '\n') } catch {} },
+}
+
+log.info('MachCtrl iniciando...')
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function isPortInUse(port) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const s = net.createConnection({ port, host: '127.0.0.1' })
     s.setTimeout(400)
     s.on('connect', () => { s.destroy(); resolve(true) })
@@ -35,69 +35,56 @@ function resolveBackendPath() {
   const candidates = [
     path.join(process.resourcesPath, 'backend', 'machctrl_server.py'),
     path.join(path.dirname(process.execPath), 'resources', 'backend', 'machctrl_server.py'),
-    path.join(app.getAppPath(), '..', 'backend', 'machctrl_server.py'),
     '/opt/machctrl/backend/machctrl_server.py',
   ]
-  const found = candidates.find(p => { try { return fs.existsSync(p) } catch { return false } })
-  if (found) return found
-  log.error('Backend não encontrado. Candidatos:', candidates)
-  return candidates[0]
+  return candidates.find(p => { try { return fs.existsSync(p) } catch { return false } }) || candidates[0]
 }
 
-// ─── Start backend ────────────────────────────────────────────────────────────
+// ─── Backend ─────────────────────────────────────────────────────────────────
 async function startBackend() {
-  // Se porta já em uso, backend (systemd ou outra instância) já está rodando
   const inUse = await isPortInUse(8765)
   if (inUse) {
-    log.info('Porta 8765 já em uso — backend existente será reutilizado.')
+    log.info('Porta 8765 em uso — reutilizando backend existente.')
     return
   }
 
   const backendPath = resolveBackendPath()
-  log.info(`Subindo backend: ${backendPath}`)
+  log.info('Subindo backend:', backendPath)
 
-  // Usa o Python do sistema (não do AppImage) com PYTHONPATH limpo
-  const python3 = '/usr/bin/python3'
   const env = Object.assign({}, process.env, {
     PYTHONUNBUFFERED: '1',
-    // Remove variáveis de ambiente que o AppImage injeta e podem quebrar imports
     LD_LIBRARY_PATH: '',
     PYTHONPATH: '',
     PYTHONHOME: '',
   })
 
-  backendProcess = spawn(python3, [backendPath], {
+  backendProcess = spawn('/usr/bin/python3', [backendPath], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env,
     detached: false,
   })
 
-  backendProcess.stdout.on('data', (d) => log.info(`[backend] ${d.toString().trim()}`))
-  backendProcess.stderr.on('data', (d) => log.warn(`[backend:err] ${d.toString().trim()}`))
+  backendProcess.stdout.on('data', d => { try { process.stdout.write('[backend] ' + d) } catch {} })
+  backendProcess.stderr.on('data', d => { try { process.stderr.write('[backend:err] ' + d) } catch {} })
+
   backendProcess.on('exit', (code, signal) => {
-    log.warn(`Backend saiu com código ${code} sinal ${signal}`)
-    if (mainWindow) {
-      mainWindow.webContents.send('backend-status', { connected: false, error: `Backend encerrou (código ${code})` })
-    }
-    // Tenta reiniciar após 3s se não foi kill intencional
+    log.warn('Backend saiu código', code, 'sinal', signal)
     if (signal !== 'SIGTERM' && signal !== 'SIGKILL') {
       setTimeout(async () => {
-        log.info('Tentando reiniciar backend...')
-        await startBackend()
+        const still = await isPortInUse(8765)
+        if (!still) startBackend()
       }, 3000)
     }
   })
 
-  log.info(`Backend PID: ${backendProcess.pid}`)
+  log.info('Backend PID:', backendProcess.pid)
 }
 
-// ─── Create window ────────────────────────────────────────────────────────────
+// ─── Window ──────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 960,
-    minHeight: 640,
+    width: 1280, height: 820,
+    minWidth: 960, minHeight: 640,
     frame: false,
     transparent: false,
     backgroundColor: '#0a0c14',
@@ -106,7 +93,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false,   // permite ws://localhost do file://
+      webSecurity: false,
     },
   })
 
@@ -121,33 +108,33 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
-// ─── IPC ──────────────────────────────────────────────────────────────────────
-ipcMain.handle('window-minimize',   () => mainWindow?.minimize())
-ipcMain.handle('window-maximize',   () => {
-  if (mainWindow?.isMaximized()) mainWindow.unmaximize()
-  else mainWindow?.maximize()
-})
-ipcMain.handle('window-close',      () => mainWindow?.close())
+// ─── IPC ─────────────────────────────────────────────────────────────────────
+ipcMain.handle('window-minimize',     () => mainWindow?.minimize())
+ipcMain.handle('window-maximize',     () => { mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize() })
+ipcMain.handle('window-close',        () => mainWindow?.close())
 ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
-ipcMain.handle('get-platform',      () => ({ platform: process.platform, arch: process.arch, hostname: os.hostname(), release: os.release() }))
-ipcMain.handle('open-external',     (_, url) => shell.openExternal(url))
+ipcMain.handle('get-platform',        () => ({ platform: process.platform, arch: process.arch, hostname: os.hostname(), release: os.release() }))
+ipcMain.handle('open-external',       (_, url) => shell.openExternal(url))
+
+ipcMain.handle('restart-backend', async () => {
+  if (backendProcess) { backendProcess.kill(); backendProcess = null }
+  await new Promise(r => setTimeout(r, 600))
+  await startBackend()
+  return { ok: true }
+})
 
 ipcMain.handle('set-autostart', (_, enable) => {
   try {
-    app.setLoginItemSettings({
-      openAtLogin: enable,
-      openAsHidden: true,  // inicia em segundo plano sem janela
-    })
-    // Fallback para Linux via .desktop em autostart
+    app.setLoginItemSettings({ openAtLogin: enable, openAsHidden: true })
     if (process.platform === 'linux') {
-      const autostartDir = require('path').join(require('os').homedir(), '.config', 'autostart')
-      const desktopFile  = require('path').join(autostartDir, 'machctrl.desktop')
-      require('fs').mkdirSync(autostartDir, { recursive: true })
+      const dir  = path.join(os.homedir(), '.config', 'autostart')
+      const file = path.join(dir, 'machctrl.desktop')
+      fs.mkdirSync(dir, { recursive: true })
       if (enable) {
-        require('fs').writeFileSync(desktopFile,
+        fs.writeFileSync(file,
           '[Desktop Entry]\nType=Application\nName=MachCtrl\nExec=/usr/local/bin/machctrl\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n')
       } else {
-        try { require('fs').unlinkSync(desktopFile) } catch { /* ok */ }
+        try { fs.unlinkSync(file) } catch {}
       }
     }
     return { ok: true }
@@ -155,17 +142,12 @@ ipcMain.handle('set-autostart', (_, enable) => {
     return { ok: false, error: e.message }
   }
 })
-ipcMain.handle('restart-backend',   async () => {
-  if (backendProcess) { backendProcess.kill(); backendProcess = null }
-  await new Promise(r => setTimeout(r, 600))
-  await startBackend()
-  return { ok: true }
-})
 
-// ─── Lifecycle ────────────────────────────────────────────────────────────────
+// ─── Lifecycle ───────────────────────────────────────────────────────────────
+app.commandLine.appendSwitch('disable-features', 'BlockInsecurePrivateNetworkRequests')
+
 app.whenReady().then(async () => {
   await startBackend()
-  // Dá tempo ao backend para ligar na porta antes de abrir a janela
   await new Promise(r => setTimeout(r, 1200))
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
