@@ -9,7 +9,8 @@ const net = require('net')
 // Permite WebSocket para localhost quando empacotado
 app.commandLine.appendSwitch('disable-features', 'BlockInsecurePrivateNetworkRequests')
 
-log.transports.file.level = 'info'
+log.transports.file.level = false   // desativa log em arquivo (evita EIO quando root)
+log.transports.console.level = 'info'
 log.info('MachCtrl Desktop iniciando...')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
