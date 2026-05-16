@@ -574,6 +574,7 @@ def set_fan_speed(pwm_path, pwm_enable_path, speed_percent):
     pwm_value = int(speed_percent * 255 / 100)
     pwm_value = max(0, min(255, pwm_value))
     try:
+        # Sempre coloca em modo manual (1) antes de definir velocidade
         if pwm_enable_path and os.path.exists(pwm_enable_path):
             with open(pwm_enable_path, "w") as f:
                 f.write("1")
@@ -584,21 +585,33 @@ def set_fan_speed(pwm_path, pwm_enable_path, speed_percent):
         print(f"ERRO: Sem permissão para escrever em {pwm_path}. Execute como root!")
         return False
     except Exception as e:
-        print(f"ERRO ao definir fan: {e}")
+        print(f"ERRO ao definir fan speed: {e}")
         return False
 
 
 def set_fan_auto(pwm_enable_path):
+    """Coloca fan em modo automático. Tenta valor 2 (auto), fallback para 0."""
+    if not pwm_enable_path or not os.path.exists(pwm_enable_path):
+        return False
     try:
-        if pwm_enable_path and os.path.exists(pwm_enable_path):
-            with open(pwm_enable_path, "w") as f:
-                f.write("2")
+        # Tenta modo auto (2)
+        with open(pwm_enable_path, "w") as f:
+            f.write("2")
+        # Verifica se foi aceito
+        with open(pwm_enable_path) as f:
+            val = f.read().strip()
+        if val == "2":
             return True
+        # Alguns chips (ex: amdgpu) aceitam só 0 (firmware) ou 1 (manual)
+        # 0 = firmware/auto para amdgpu
+        with open(pwm_enable_path, "w") as f:
+            f.write("0")
+        return True
     except PermissionError:
-        print(f"ERRO: Sem permissão. Execute como root!")
+        print("ERRO: Sem permissão. Execute como root!")
         return False
     except Exception as e:
-        print(f"ERRO: {e}")
+        print(f"ERRO set_fan_auto: {e}")
         return False
 
 

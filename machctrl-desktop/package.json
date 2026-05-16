@@ -33,6 +33,10 @@
         "from": "backend",
         "to": "backend",
         "filter": ["**/*"]
+      },
+      {
+        "from": "src/assets/app-icon.png",
+        "to": "app-icon.png"
       }
     ],
     "linux": {

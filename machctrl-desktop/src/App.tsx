@@ -12,6 +12,7 @@ import { BenchmarkPanel } from './components/benchmark/BenchmarkPanel'
 import { useSensorData } from './hooks/useSensorData'
 import { useTheme } from './hooks/useTheme'
 import { useState } from 'react'
+import appIconUrl from './assets/app-icon.png'
 
 const PAGE_TITLES: Record<Tab, string> = {
   overview:'Visão Geral', cpu:'CPU', memory:'Memória', disks:'Discos',
@@ -101,11 +102,10 @@ function AboutPanel({ theme, onToggleTheme }: { theme: string; onToggleTheme: ()
   return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:20 }}>
       <img
-        src="/src/assets/app-icon.png"
+        src={appIconUrl}
         alt="MachCtrl"
         style={{ width:100, height:100, borderRadius:24, objectFit:'contain',
           boxShadow:'0 12px 40px hsl(217 100% 62% / 0.3)' }}
-        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
       />
       <div style={{ textAlign:'center' }}>
         <div style={{ fontSize:26, fontWeight:900, color:'hsl(var(--text))' }}>MachCtrl</div>

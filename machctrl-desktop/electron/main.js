@@ -78,6 +78,10 @@ async function startBackend() {
 
 // ─── Window ──────────────────────────────────────────────────────────────────
 function createWindow() {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app-icon.png')
+    : path.join(__dirname, '..', 'src', 'assets', 'app-icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1280, height: 820,
     minWidth: 960, minHeight: 640,
@@ -85,6 +89,7 @@ function createWindow() {
     transparent: false,
     backgroundColor: '#0a0c14',
     titleBarStyle: 'hidden',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
