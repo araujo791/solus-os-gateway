@@ -493,6 +493,74 @@ def get_system_info():
     except PermissionError:
         info["board"] = "Desconhecida (precisa de root)"
 
+    # BIOS date
+    try:
+        def _read(p):
+            try:
+                with open(p) as f: return f.read().strip()
+            except: return ""
+        bios_date    = _read("/sys/class/dmi/id/bios_date")
+        bios_vendor  = _read("/sys/class/dmi/id/bios_vendor")
+        bios_version = _read("/sys/class/dmi/id/bios_version")
+        info["bios_date"]    = bios_date
+        info["bios_vendor"]  = bios_vendor
+        info["bios_version"] = bios_version
+    except Exception:
+        info["bios_date"] = info["bios_vendor"] = info["bios_version"] = ""
+
+    # Data de instalação do sistema (baseada em /lost+found ou /var/log/pacman.log)
+    try:
+        install_ts = None
+        for path in ["/var/log/pacman.log", "/var/log/dpkg.log"]:
+            if os.path.exists(path):
+                with open(path) as f:
+                    first = f.readline().strip()
+                if first:
+                    import re as _re
+                    m = _re.match(r"\[(\d{4}-\d{2}-\d{2})", first)
+                    if m:
+                        info["install_date"] = m.group(1)
+                        break
+        if "install_date" not in info:
+            # Fallback: data de criação do filesystem root
+            st = os.stat("/")
+            info["install_date"] = time.strftime("%Y-%m-%d", time.localtime(st.st_ctime))
+    except Exception:
+        info["install_date"] = ""
+
+    # Total de armazenamento (todos os discos físicos, montados ou não)
+    try:
+        total_storage_gb = 0
+        block_dir = "/sys/block"
+        if os.path.exists(block_dir):
+            for dev in os.listdir(block_dir):
+                # Ignora partições, loops, ram
+                if re.match(r"^(loop|ram|zram|sr|fd)", dev):
+                    continue
+                size_path = f"{block_dir}/{dev}/size"
+                if os.path.exists(size_path):
+                    try:
+                        with open(size_path) as f:
+                            sectors = int(f.read().strip())
+                        total_storage_gb += sectors * 512 / (1024**3)
+                    except Exception:
+                        pass
+        info["total_storage_gb"] = round(total_storage_gb, 1)
+    except Exception:
+        info["total_storage_gb"] = 0
+
+    # Bateria
+    try:
+        battery = psutil.sensors_battery()
+        if battery:
+            info["battery"] = {
+                "percent":   round(battery.percent, 1),
+                "plugged":   battery.power_plugged,
+                "secsleft":  battery.secsleft if battery.secsleft > 0 else 0,
+            }
+    except Exception:
+        pass
+
     # GPU
     info["gpu_name"] = get_gpu_name()
 
@@ -504,6 +572,24 @@ def get_system_info():
     except Exception:
         info["uptime"] = "N/A"
     return info
+
+
+def get_top_processes(n=10):
+    """Retorna os N processos com maior uso de RAM."""
+    procs = []
+    for p in psutil.process_iter(['pid', 'name', 'memory_info', 'cpu_percent']):
+        try:
+            mem = p.info['memory_info'].rss if p.info['memory_info'] else 0
+            procs.append({
+                "pid":    p.info['pid'],
+                "name":   p.info['name'],
+                "mem_mb": round(mem / (1024**2), 1),
+                "cpu":    round(p.info['cpu_percent'] or 0, 1),
+            })
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    procs.sort(key=lambda x: x['mem_mb'], reverse=True)
+    return procs[:n]
 
 
 def get_disk_type(device: str) -> str:
@@ -1236,6 +1322,7 @@ class SensorServer:
                 "io_rates": disk_rates,
             },
             "system": self.system_info,
+            "top_processes": get_top_processes(10),
             "temp_history": list(self.temp_history),
             "current_governor": current_governor,
             "current_profile": self.current_profile,
