@@ -50,21 +50,28 @@ function MonitorWidget({ wallpaper }: { wallpaper?: string }) {
   }, [wallpaper])
 
   return (
-    <div style={{ position:'relative', width:200, height:142, flexShrink:0 }}>
-      {/* Imagem do wallpaper dentro da tela */}
+    <div style={{ position:'relative', width:220, height:156, flexShrink:0 }}>
+      {/* Moldura do monitor (com tela transparente) */}
+      <img
+        src={monitorImg}
+        alt="monitor"
+        style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'contain', zIndex:2 }}
+      />
+      {/* Wallpaper na área da tela — por baixo da moldura */}
       <div style={{
         position:'absolute',
-        top:'5%', left:'6%', right:'6%', bottom:'22%',
-        borderRadius:3, overflow:'hidden',
-        background:'hsl(var(--bg))',
+        top:'4%', left:'7%', right:'7%', bottom:'21%',
+        zIndex:1, borderRadius:2, overflow:'hidden',
+        background:'linear-gradient(135deg, hsl(217 100% 20%), hsl(262 80% 15%))',
       }}>
-        {wallB64
-          ? <img src={wallB64} alt="wallpaper" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-          : <div style={{ width:'100%', height:'100%', background:'linear-gradient(135deg, hsl(217 100% 20%), hsl(262 80% 15%))' }} />
-        }
+        {wallB64 && (
+          <img
+            src={wallB64}
+            alt="wallpaper"
+            style={{ width:'100%', height:'100%', objectFit:'cover' }}
+          />
+        )}
       </div>
-      {/* Moldura do monitor por cima */}
-      <img src={monitorImg} alt="monitor" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'contain' }} />
     </div>
   )
 }
@@ -211,10 +218,10 @@ export function OverviewPanel({ data, cpuHistory }: OverviewProps) {
         {gpuTemp > 0 && (
           <Card>
             <CardTitle>GPU</CardTitle>
-            <div style={{ marginBottom:10 }}>
-              {gpuBrand==='nvidia' && <img src={nvidiaLogoUrl} alt="NVIDIA" style={{ height:36, objectFit:'contain', maxWidth:130 }} />}
-              {gpuBrand==='amd'    && <img src={amdRadeonUrl}  alt="AMD"    style={{ height:42, objectFit:'contain', maxWidth:130 }} />}
-              {gpuBrand==='unknown' && <span style={{ fontSize:13, fontWeight:700, color:'hsl(var(--muted))' }}>{gpuName||'GPU'}</span>}
+            <div style={{ marginBottom:12 }}>
+              {gpuBrand==='nvidia' && <img src={nvidiaLogoUrl} alt="NVIDIA" style={{ height:100, objectFit:'contain', maxWidth:280 }} />}
+              {gpuBrand==='amd'    && <img src={amdRadeonUrl}  alt="AMD"    style={{ height:120, objectFit:'contain', maxWidth:280 }} />}
+              {gpuBrand==='unknown' && <span style={{ fontSize:16, fontWeight:700, color:'hsl(var(--muted))' }}>{gpuName||'GPU'}</span>}
             </div>
             <div style={{ display:'flex', gap:14, alignItems:'center', marginBottom:10 }}>
               <RingGauge value={(data.gpu as any)?.usage??0} size={72} thickness={7}
