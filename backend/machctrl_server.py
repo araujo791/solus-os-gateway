@@ -561,6 +561,30 @@ def get_system_info():
     except Exception:
         pass
 
+    # Wallpaper atual
+    try:
+        wall = ""
+        # KDE Plasma
+        r = subprocess.run(
+            ["qdbus", "org.kde.plasmashell", "/PlasmaShell",
+             "org.kde.PlasmaShell.evaluateScript",
+             "var all=desktops();var d=all[0];d.currentConfigGroup=['Wallpaper','org.kde.image','General'];d.readConfig('Image')"],
+            capture_output=True, text=True, timeout=3
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            wall = r.stdout.strip().replace("file://", "")
+        # GNOME fallback
+        if not wall:
+            r2 = subprocess.run(
+                ["gsettings", "get", "org.gnome.desktop.background", "picture-uri"],
+                capture_output=True, text=True, timeout=2
+            )
+            if r2.returncode == 0:
+                wall = r2.stdout.strip().strip("'\"").replace("file://", "")
+        info["wallpaper"] = wall
+    except Exception:
+        info["wallpaper"] = ""
+
     # GPU
     info["gpu_name"] = get_gpu_name()
 

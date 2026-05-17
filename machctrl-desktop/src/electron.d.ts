@@ -9,6 +9,7 @@ declare global {
       restartBackend: () => Promise<{ ok: boolean }>
       openExternal:   (url: string) => Promise<void>
       setAutostart:   (enable: boolean) => Promise<{ ok: boolean; error?: string }>
+      readFileB64:    (filePath: string) => string | null
       onBackendStatus:(cb: (v: { connected: boolean; error?: string }) => void) => void
     }
   }
