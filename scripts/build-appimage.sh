@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build do AppImage do Sensei.
+# Build do AppImage do MachCtrl.
 # Requisitos: node/npm, python3, e appimagetool (será baixado se faltar).
 set -euo pipefail
 
@@ -18,10 +18,10 @@ npx vite build
 
 echo "[3/5] Empacotando Electron…"
 rm -rf release
-npx @electron/packager . Sensei \
+npx @electron/packager . MachCtrl \
   --platform=linux --arch=x64 \
   --out=release --overwrite \
-  --icon=packaging/sensei.png \
+  --icon=packaging/machctrl.png \
   --ignore='^/src$' \
   --ignore='^/public$' \
   --ignore='^/release$' \
@@ -32,22 +32,22 @@ npx @electron/packager . Sensei \
   --ignore='\.git'
 
 # Copia o backend Python para resources/
-mkdir -p release/Sensei-linux-x64/resources/backend
-cp -r backend/*.py release/Sensei-linux-x64/resources/backend/
+mkdir -p release/MachCtrl-linux-x64/resources/backend
+cp -r backend/*.py release/MachCtrl-linux-x64/resources/backend/
 
 echo "[4/5] Montando AppDir…"
-APPDIR="release/Sensei.AppDir"
+APPDIR="release/MachCtrl.AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR"
-cp -r release/Sensei-linux-x64/* "$APPDIR/"
-cp packaging/sensei.desktop "$APPDIR/sensei.desktop"
-cp packaging/sensei.png "$APPDIR/sensei.png"
-ln -sf sensei.png "$APPDIR/.DirIcon"
+cp -r release/MachCtrl-linux-x64/* "$APPDIR/"
+cp packaging/machctrl.desktop "$APPDIR/machctrl.desktop"
+cp packaging/machctrl.png "$APPDIR/machctrl.png"
+ln -sf machctrl.png "$APPDIR/.DirIcon"
 
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/usr/bin/env bash
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/Sensei" "$@"
+exec "$HERE/MachCtrl" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
@@ -62,9 +62,9 @@ else
   APPIMAGETOOL=$(command -v appimagetool)
 fi
 
-ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" Sensei-x86_64.AppImage
+ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" MachCtrl-x86_64.AppImage
 
 echo ""
-echo "✓ Pronto: $ROOT/Sensei-x86_64.AppImage"
+echo "✓ Pronto: $ROOT/MachCtrl-x86_64.AppImage"
 echo "  Para empacotar como pacman:"
-echo "    cp Sensei-x86_64.AppImage packaging/ && cd packaging && makepkg -si"
+echo "    cp MachCtrl-x86_64.AppImage packaging/ && cd packaging && makepkg -si"

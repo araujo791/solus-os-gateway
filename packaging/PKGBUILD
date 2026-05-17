@@ -1,26 +1,26 @@
-# Maintainer: Sensei <noreply@sensei.local>
-pkgname=sensei
+# Maintainer: MachCtrl <noreply@machctrl.local>
+pkgname=machctrl
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="Sensei - Monitor de hardware estilo Sensei 2.0 para CachyOS/Arch"
+pkgdesc="MachCtrl - Monitor de hardware estilo MachCtrl 2.0 para CachyOS/Arch"
 arch=('x86_64')
-url="https://github.com/sensei/sensei"
+url="https://github.com/araujo791/solus-os-gateway"
 license=('MIT')
 depends=('lm_sensors' 'python' 'python-psutil' 'dmidecode' 'fuse2')
 makedepends=('nodejs' 'npm')
 options=(!strip !debug)
-source=("Sensei-x86_64.AppImage" "sensei.desktop" "sensei.png")
+source=("MachCtrl-x86_64.AppImage" "machctrl.desktop" "machctrl.png")
 sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 package() {
-  install -Dm755 "$srcdir/Sensei-x86_64.AppImage" "$pkgdir/opt/sensei/Sensei.AppImage"
-  install -Dm644 "$srcdir/sensei.desktop" "$pkgdir/usr/share/applications/sensei.desktop"
-  install -Dm644 "$srcdir/sensei.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/sensei.png"
+  install -Dm755 "$srcdir/MachCtrl-x86_64.AppImage" "$pkgdir/opt/machctrl/MachCtrl.AppImage"
+  install -Dm644 "$srcdir/machctrl.desktop" "$pkgdir/usr/share/applications/machctrl.desktop"
+  install -Dm644 "$srcdir/machctrl.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/machctrl.png"
 
   install -dm755 "$pkgdir/usr/bin"
-  cat > "$pkgdir/usr/bin/sensei" <<'EOF'
+  cat > "$pkgdir/usr/bin/machctrl" <<'EOF'
 #!/usr/bin/env bash
-exec /opt/sensei/Sensei.AppImage "$@"
+exec /opt/machctrl/MachCtrl.AppImage "$@"
 EOF
-  chmod 755 "$pkgdir/usr/bin/sensei"
+  chmod 755 "$pkgdir/usr/bin/machctrl"
 }

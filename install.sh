@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instalador do Sensei para CachyOS / Arch.
+# Instalador do MachCtrl para CachyOS / Arch.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -8,7 +8,7 @@ cd "$ROOT"
 cat <<EOF
 
   ╔═══════════════════════════════════════════╗
-  ║          Sensei — Instalador              ║
+  ║          MachCtrl — Instalador              ║
   ║    Hardware monitor para CachyOS/Arch     ║
   ╚═══════════════════════════════════════════╝
 
@@ -16,7 +16,7 @@ EOF
 
 echo "Escolha a forma de instalação:"
 echo "  1) Compilar e instalar via pacman (recomendado, makepkg -si)"
-echo "  2) Apenas gerar o AppImage portátil (./Sensei-x86_64.AppImage)"
+echo "  2) Apenas gerar o AppImage portátil (./MachCtrl-x86_64.AppImage)"
 echo "  3) Modo desenvolvedor (rodar backend + vite local, sem build)"
 echo ""
 read -rp "Opção [1-3]: " OPT
@@ -28,18 +28,18 @@ build_appimage() {
 case "$OPT" in
   1)
     build_appimage
-    cp Sensei-x86_64.AppImage packaging/
+    cp MachCtrl-x86_64.AppImage packaging/
     # cria um ícone placeholder se não existir
-    [ -f packaging/sensei.png ] || \
-      curl -sL -o packaging/sensei.png \
+    [ -f packaging/machctrl.png ] || \
+      curl -sL -o packaging/machctrl.png \
         https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/cpu.svg || true
     ( cd packaging && makepkg -si )
     ;;
   2)
     build_appimage
     echo ""
-    echo "AppImage gerado em: $ROOT/Sensei-x86_64.AppImage"
-    echo "Execute com: ./Sensei-x86_64.AppImage"
+    echo "AppImage gerado em: $ROOT/MachCtrl-x86_64.AppImage"
+    echo "Execute com: ./MachCtrl-x86_64.AppImage"
     ;;
   3)
     echo "Instalando dependências Python…"
