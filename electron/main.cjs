@@ -1,4 +1,4 @@
-// Electron main process — MachCtrl (CachyOS)
+// Electron main process — Sensei (CachyOS)
 // CommonJS porque o package.json tem "type": "module".
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell } = require("electron");
 const { spawn } = require("child_process");
@@ -36,17 +36,17 @@ function findBackendScript() {
 function startBackend() {
   const script = findBackendScript();
   if (!script) {
-    console.error("[machctrl] backend script não encontrado");
+    console.error("[sensei] backend script não encontrado");
     return;
   }
   const py = findPython();
-  console.log(`[machctrl] iniciando backend: ${py} ${script}`);
+  console.log(`[sensei] iniciando backend: ${py} ${script}`);
   pyProc = spawn(py, [script], {
     env: { ...process.env, MACHCTRL_PORT: String(BACKEND_PORT) },
     stdio: "inherit",
   });
   pyProc.on("exit", (code) => {
-    console.log(`[machctrl] backend saiu (${code})`);
+    console.log(`[sensei] backend saiu (${code})`);
     pyProc = null;
   });
 }
@@ -72,7 +72,7 @@ function tempIcon(temp) {
 
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
-    { label: "Abrir MachCtrl", click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
+    { label: "Abrir Sensei", click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
     { type: "separator" },
     { label: `CPU: ${lastTemp || "--"}°C`, enabled: false },
     { type: "separator" },
@@ -82,7 +82,7 @@ function buildTrayMenu() {
 
 function createTray() {
   tray = new Tray(tempIcon(0));
-  tray.setToolTip("MachCtrl — Hardware Monitor");
+  tray.setToolTip("Sensei — Hardware Monitor");
   tray.setContextMenu(buildTrayMenu());
   tray.on("click", () => {
     if (!mainWindow) return;
@@ -98,7 +98,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     backgroundColor: "#0E1116",
-    title: "MachCtrl",
+    title: "Sensei",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -122,9 +122,9 @@ function createWindow() {
   });
 }
 
-// ---- Auto-start (~/.config/autostart/machctrl.desktop) ----
+// ---- Auto-start (~/.config/autostart/sensei.desktop) ----
 function autostartPath() {
-  return path.join(os.homedir(), ".config", "autostart", "machctrl.desktop");
+  return path.join(os.homedir(), ".config", "autostart", "sensei.desktop");
 }
 
 function readAutostart() {
@@ -142,10 +142,10 @@ function writeAutostart(enabled) {
   const content =
 `[Desktop Entry]
 Type=Application
-Name=MachCtrl
+Name=Sensei
 Comment=Hardware monitor
 Exec=${exec} --hidden
-Icon=machctrl
+Icon=sensei
 X-GNOME-Autostart-enabled=true
 Terminal=false
 Categories=Utility;System;
@@ -155,17 +155,17 @@ Categories=Utility;System;
 }
 
 // ---- IPC ----
-ipcMain.handle("machctrl:set-tray-temp", (_e, temp) => {
+ipcMain.handle("sensei:set-tray-temp", (_e, temp) => {
   lastTemp = Math.round(Number(temp) || 0);
   if (tray) {
     tray.setImage(tempIcon(lastTemp));
-    tray.setToolTip(`MachCtrl — CPU ${lastTemp}°C`);
+    tray.setToolTip(`Sensei — CPU ${lastTemp}°C`);
     tray.setContextMenu(buildTrayMenu());
   }
 });
-ipcMain.handle("machctrl:get-autostart", () => readAutostart());
-ipcMain.handle("machctrl:toggle-autostart", (_e, enabled) => writeAutostart(!!enabled));
-ipcMain.handle("machctrl:open-external", (_e, url) => shell.openExternal(url));
+ipcMain.handle("sensei:get-autostart", () => readAutostart());
+ipcMain.handle("sensei:toggle-autostart", (_e, enabled) => writeAutostart(!!enabled));
+ipcMain.handle("sensei:open-external", (_e, url) => shell.openExternal(url));
 
 app.on("before-quit", () => { app.isQuitting = true; stopBackend(); });
 app.on("window-all-closed", () => { /* mantém vivo na tray */ });

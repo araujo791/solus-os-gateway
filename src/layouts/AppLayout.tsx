@@ -8,13 +8,13 @@ import { RotateCw } from "lucide-react";
 function TrayBridge() {
   const sensors = useSensors();
   useEffect(() => {
-    const machctrl = (window as any).machctrl;
-    if (!machctrl?.setTrayTemp) return;
+    const sensei = (window as any).sensei;
+    if (!sensei?.setTrayTemp) return;
     const t =
       sensors.cpusTemps?.[0]?.package ??
       sensors.cpuTemp ??
       0;
-    if (t > 0) machctrl.setTrayTemp(Math.round(t));
+    if (t > 0) sensei.setTrayTemp(Math.round(t));
   }, [sensors.cpusTemps, sensors.cpuTemp]);
   return null;
 }
@@ -32,7 +32,7 @@ function HeaderBar() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => {
-            if (confirm("Reiniciar serviço MachCtrl?")) sensors.restartService();
+            if (confirm("Reiniciar serviço Sensei?")) sensors.restartService();
           }}
           className="flex items-center gap-1.5 rounded-md border border-border bg-secondary/30 px-2.5 py-1 font-mono text-[10px] text-muted-foreground transition-all hover:border-warning/50 hover:text-warning"
         >

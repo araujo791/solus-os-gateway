@@ -13,8 +13,6 @@ import DisksPage from "./pages/DisksPage";
 import FansPage from "./pages/FansPage";
 import PowerPage from "./pages/PowerPage";
 import SystemPage from "./pages/SystemPage";
-import BenchmarkPage from "./pages/BenchmarkPage";
-import CleanerPage from "./pages/CleanerPage";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -36,8 +34,6 @@ const App = () => (
               <Route path="/disks" element={<DisksPage />} />
               <Route path="/fans" element={<FansPage />} />
               <Route path="/power" element={<PowerPage />} />
-              <Route path="/benchmark" element={<BenchmarkPage />} />
-              <Route path="/cleaner" element={<CleanerPage />} />
               <Route path="/system" element={<SystemPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />
