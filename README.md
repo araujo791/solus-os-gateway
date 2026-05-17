@@ -1,12 +1,11 @@
 # MachCtrl
 
-Monitor e otimizador de hardware estilo **Sensei 2.0 (macOS)** para **CachyOS / Arch Linux**.
+Monitor de hardware estilo **MachCtrl 2.0 (macOS)** para **CachyOS / Arch Linux**.
 
 App desktop com sidebar de navegação, tela Overview central, ícone na bandeja
-mostrando a temperatura da CPU em tempo real, tema claro/escuro, auto-start
-no boot, **Benchmark** (CPU + memória) e **Limpeza** (cache pacman, órfãos,
-journal, temp, thumbnails). O backend Python lê `lm_sensors`, `psutil`,
-`dmidecode`, `RAPL` e sysfs diretamente.
+mostrando a temperatura da CPU em tempo real, tema claro/escuro e auto-start
+no boot. O backend Python lê `lm_sensors`, `psutil`, `dmidecode`, `RAPL` e
+sysfs diretamente — sem dependências externas em nuvem.
 
 ## Instalar (CachyOS / Arch)
 
@@ -14,11 +13,11 @@ journal, temp, thumbnails). O backend Python lê `lm_sensors`, `psutil`,
 ./install.sh
 ```
 
-Opções:
+Você poderá escolher:
 
 1. **Pacman** — compila um pacote `.pkg.tar.zst` via `makepkg -si`
-2. **AppImage portátil** — gera `MachCtrl-x86_64.AppImage`
-3. **Modo dev** — sobe o backend + Vite no navegador
+2. **AppImage portátil** — gera `MachCtrl-x86_64.AppImage` para rodar de qualquer lugar
+3. **Modo dev** — sobe o backend + Vite no navegador para desenvolvimento
 
 ## Build manual
 
@@ -49,10 +48,9 @@ npm run electron:dev
 ```
 backend/        # WebSocket server Python (porta 8765)
 electron/       # main.cjs + preload.cjs
-src/
+src/            # React app (HashRouter)
   layouts/      # AppLayout (sidebar + header)
-  pages/        # Overview, CpuPage, GpuPage, MemoryPage, DisksPage,
-                # FansPage, PowerPage, BenchmarkPage, CleanerPage, SystemPage
+  pages/        # Overview, CpuPage, GpuPage, MemoryPage, ...
   components/   # AppSidebar, dashboard/*
 packaging/      # PKGBUILD, .desktop, ícone
 scripts/        # build-appimage.sh
@@ -60,10 +58,8 @@ scripts/        # build-appimage.sh
 
 ## Recursos
 
-- 🎛 Sidebar com Visão geral, CPU, GPU, Memória, Discos, Ventiladores, Energia, Benchmark, Limpeza, Sistema
+- 🎛 Sidebar com Overview, CPU, GPU, Memória, Discos, Fans, Energia, Sistema
 - 🌡 Tray icon com temperatura da CPU sempre visível
 - 🌓 Tema claro/escuro
 - 🚀 Auto-start no login (gera `~/.config/autostart/machctrl.desktop`)
 - 🔌 Backend Python embutido (spawn automático ao abrir)
-- ⚡ Benchmark de CPU (crivo + ponto flutuante) e largura de banda de memória
-- 🧹 Limpeza de cache pacman, órfãos, journal, temp, thumbnails, pip, npm
