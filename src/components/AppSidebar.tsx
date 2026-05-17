@@ -50,15 +50,15 @@ export function AppSidebar() {
   const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
-    const sensei = (window as any).sensei;
-    if (sensei?.getAutostart) sensei.getAutostart().then(setAutostart);
+    const machctrl = (window as any).machctrl;
+    if (machctrl?.getAutostart) machctrl.getAutostart().then(setAutostart);
   }, []);
 
   const toggleAutostart = async () => {
     const next = !autostart;
     setAutostart(next);
-    const sensei = (window as any).sensei;
-    if (sensei?.toggleAutostart) await sensei.toggleAutostart(next);
+    const machctrl = (window as any).machctrl;
+    if (machctrl?.toggleAutostart) await machctrl.toggleAutostart(next);
   };
 
   const isActive = (path: string) =>

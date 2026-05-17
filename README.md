@@ -1,6 +1,6 @@
-# Sensei
+# MachCtrl
 
-Monitor de hardware estilo **Sensei 2.0 (macOS)** para **CachyOS / Arch Linux**.
+Monitor de hardware estilo **MachCtrl 2.0 (macOS)** para **CachyOS / Arch Linux**.
 
 App desktop com sidebar de navegação, tela Overview central, ícone na bandeja
 mostrando a temperatura da CPU em tempo real, tema claro/escuro e auto-start
@@ -16,7 +16,7 @@ sysfs diretamente — sem dependências externas em nuvem.
 Você poderá escolher:
 
 1. **Pacman** — compila um pacote `.pkg.tar.zst` via `makepkg -si`
-2. **AppImage portátil** — gera `Sensei-x86_64.AppImage` para rodar de qualquer lugar
+2. **AppImage portátil** — gera `MachCtrl-x86_64.AppImage` para rodar de qualquer lugar
 3. **Modo dev** — sobe o backend + Vite no navegador para desenvolvimento
 
 ## Build manual
@@ -26,7 +26,7 @@ Você poderá escolher:
 bash scripts/build-appimage.sh
 
 # Pacote pacman
-cp Sensei-x86_64.AppImage packaging/
+cp MachCtrl-x86_64.AppImage packaging/
 cd packaging && makepkg -si
 ```
 
@@ -61,5 +61,5 @@ scripts/        # build-appimage.sh
 - 🎛 Sidebar com Overview, CPU, GPU, Memória, Discos, Fans, Energia, Sistema
 - 🌡 Tray icon com temperatura da CPU sempre visível
 - 🌓 Tema claro/escuro
-- 🚀 Auto-start no login (gera `~/.config/autostart/sensei.desktop`)
+- 🚀 Auto-start no login (gera `~/.config/autostart/machctrl.desktop`)
 - 🔌 Backend Python embutido (spawn automático ao abrir)
