@@ -11,6 +11,8 @@ import {
   Sun,
   Moon,
   Power,
+  Gauge,
+  Trash2,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
@@ -35,6 +37,8 @@ const items = [
   { title: "Discos", url: "/disks", icon: HardDrive },
   { title: "Ventiladores", url: "/fans", icon: Fan },
   { title: "Energia", url: "/power", icon: Zap },
+  { title: "Benchmark", url: "/benchmark", icon: Gauge },
+  { title: "Limpeza", url: "/cleaner", icon: Trash2 },
   { title: "Sistema", url: "/system", icon: Info },
 ];
 
@@ -72,7 +76,7 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="leading-tight">
-              <div className="font-display text-sm font-bold tracking-wider">SENSEI</div>
+              <div className="font-display text-sm font-bold tracking-wider">MACHCTRL</div>
               <div className="font-mono text-[9px] text-muted-foreground">Hardware Monitor</div>
             </div>
           )}
